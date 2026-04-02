@@ -1,1 +1,221 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>現場注文アプリ 完全版</title>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<style>
+body{font-family:sans-serif;margin:0;padding:5px;}
+h3,h4{margin:5px 0;font-size:14px;}
+button{width:100%;padding:6px;margin:2px 0;font-size:12px;}
+input{width:100%;padding:2px;font-size:12px;box-sizing:border-box;}
+
+table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;}
+th,td{border:1px solid #000;padding:1px;text-align:center;}
+td input{width:100%;padding:1px;font-size:11px;box-sizing:border-box;}
+
+td:nth-child(1){width:35%;}
+td:nth-child(2){width:40%;}
+td:nth-child(3){width:15%;}
+td:nth-child(4){width:10%;}
+
+.item{background:#eee;margin:1px;padding:2px;font-size:12px;}
+#status{font-size:11px;color:#d00;}
+</style>
+</head>
+
+<body>
+
+<h3>現場情報</h3>
+<input id="siteName" placeholder="現場名">
+<input id="siteAddress" placeholder="住所">
+<button onclick="getLocation()">📍GPS取得</button>
+
+<h3>📸 OCR</h3>
+<input type="file" accept="image/*" capture="environment" id="camera">
+<button id="ocrBtn" disabled>準備中...</button>
+<div id="status"></div>
+
+<h4>仮リスト</h4>
+<div id="tempList"></div>
+
+<h4>注文リスト</h4>
+<div id="captureArea">
+<table>
+<tr><th>品番</th><th>コメント</th><th>数</th><th>削除</th></tr>
+<tbody id="orderTable"></tbody>
+</table>
+</div>
+
+<button onclick="shareImage()">📸 共有 / LINE・メール</button>
+<button onclick="window.print()">🖨 印刷</button>
+
+<script>
+let tempItems=[];
+let orderItems=[];
+let worker=null;
+let ready=false;
+let reading=false;
+
+// OCR初期化
+(async()=>{
+  status.innerText="OCR初期化中...";
+  worker=await Tesseract.createWorker();
+  await worker.loadLanguage('eng');
+  await worker.initialize('eng');
+  ready=true;
+  ocrBtn.disabled=false;
+  ocrBtn.innerText="読み取り";
+  status.innerText="準備OK";
+})();
+
+// 画像前処理
+async function preprocessImage(file){
+  return new Promise(resolve=>{
+    let img=new Image();
+    img.src=URL.createObjectURL(file);
+    img.onload=()=>{
+      let canvas=document.createElement("canvas");
+      canvas.width=img.width;
+      canvas.height=img.height;
+      let ctx=canvas.getContext("2d");
+      ctx.drawImage(img,0,0);
+      let data=ctx.getImageData(0,0,canvas.width,canvas.height);
+      for(let i=0;i<data.data.length;i+=4){
+        let avg=(data.data[i]+data.data[i+1]+data.data[i+2])/3;
+        let v=avg>150?255:0;
+        data.data[i]=data.data[i+1]=data.data[i+2]=v;
+      }
+      ctx.putImageData(data,0,0);
+      resolve(canvas);
+    };
+  });
+}
+
+// OCR読み取り
+ocrBtn.onclick=async function(){
+  if(reading) return;
+  if(!ready) return alert("準備中");
+
+  let file=camera.files[0];
+  if(!file) return alert("画像選択");
+
+  reading=true;
+  ocrBtn.disabled=true;
+  status.innerText="画像処理中...";
+
+  let processed=await preprocessImage(file);
+
+  status.innerText="読み取り中...";
+  let res=await worker.recognize(processed);
+  let raw=res.data.text;
+
+  tempItems=[...new Set(
+    (raw.match(/[A-Z]{1,5}[0-9]{1,5}[-A-Z0-9]*/g)||[])
+      .filter(x=>x.length>=4)
+      .filter(x=>/[A-Z]/.test(x))
+  )];
+
+  renderTemp();
+  reading=false;
+  ocrBtn.disabled=false;
+  status.innerText="完了";
+};
+
+// 仮リスト表示
+function renderTemp(){
+  tempList.innerHTML="";
+  tempItems.forEach((c,i)=>{
+    tempList.innerHTML+=`
+    <div class="item">
+      ${c}
+      <input id="q${i}" type="number" value="1">
+      <button onclick="addItem('${c}',${i})">追加</button>
+      <button onclick="removeTemp(${i})">削除</button>
+    </div>`;
+  });
+}
+
+function removeTemp(i){ tempItems.splice(i,1); renderTemp(); }
+
+// 注文リスト追加
+function addItem(code,i){
+  let qty=Number(document.getElementById("q"+i).value);
+  let exist=orderItems.find(x=>x.code===code);
+  if(exist) exist.qty+=qty;
+  else orderItems.push({code,qty,comment:""});
+  tempItems.splice(i,1); renderTemp(); renderOrder();
+}
+
+// 注文リスト表示
+function renderOrder(){
+  orderTable.innerHTML="";
+  orderItems.forEach((i,index)=>{
+    orderTable.innerHTML+=`
+    <tr>
+      <td>${i.code}</td>
+      <td><input value="${i.comment}" onchange="orderItems[${index}].comment=this.value"></td>
+      <td><input type="number" value="${i.qty}" onchange="orderItems[${index}].qty=Number(this.value)"></td>
+      <td><button onclick="removeOrder(${index})">✕</button></td>
+    </tr>`;
+  });
+}
+
+function removeOrder(i){ orderItems.splice(i,1); renderOrder(); }
+
+// GPS住所取得
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+    siteAddress.value="取得中...";
+    try{
+      let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let d=await res.json();
+      let a=d.address||{};
+      let addr=(a.city||a.town||"")+(a.suburb||"")+(a.road||"")+(a.house_number||"");
+      siteAddress.value=addr || d.display_name;
+    }catch{
+      siteAddress.value=lat.toFixed(5)+","+lon.toFixed(5);
+    }
+  },()=>{ alert("GPS取得失敗"); });
+}
+
+// 共有（LINE / メール / コピー用）
+function shareImage(){
+  let capture=document.createElement("div");
+  capture.style.padding="5px";
+  capture.style.background="#fff";
+  capture.innerHTML=`<h4>${siteName.value||"-"} / ${siteAddress.value||"-"}</h4>`+
+    `<table border="1" style="width:100%;border-collapse:collapse;font-size:11px;">`+
+    `<tr><th>品番</th><th>コメント</th><th>数</th></tr>`+
+    orderItems.map(i=>`<tr>
+      <td>${i.code}</td><td>${i.comment}</td><td>${i.qty}</td></tr>`).join("")+
+    `</table>`;
+
+  document.body.appendChild(capture);
+  html2canvas(capture).then(canvas=>{
+    canvas.toBlob(blob=>{
+      let file=new File([blob],"order.png");
+      if(navigator.share){
+        navigator.share({files:[file]});
+      }else{
+        // 画像保存リンクでダウンロード可能
+        let a=document.createElement("a");
+        a.href=URL.createObjectURL(blob);
+        a.download="order.png";
+        a.click();
+        alert("共有非対応環境では画像をダウンロードしました");
+      }
+      document.body.removeChild(capture);
+    });
+  });
+}
+</script>
+
+</body>
+</html>
