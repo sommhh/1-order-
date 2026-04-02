@@ -1,1 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>現場注文アプリ FINAL</title>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<style>
+body{font-family:sans-serif;background:#f2f2f2;padding:8px;}
+button{width:100%;padding:10px;margin:4px 0;font-size:16px;}
+input{padding:6px;width:100%;}
+.item{background:#fff;padding:6px;margin:4px 0;border-radius:6px;}
+table{width:100%;border-collapse:collapse;background:#fff;}
+th,td{border:1px solid #000;padding:4px;text-align:center;font-size:13px;}
+th{background:#ddd;}
+</style>
+</head>
+
+<body>
+
+<h3>🏠 現場</h3>
+<input id="siteName" placeholder="現場名">
+<input id="siteAddress" placeholder="住所">
+<button onclick="getLocation()">GPS</button>
+
+<h3>📸 OCR</h3>
+<input type="file" accept="image/*" capture="environment" id="camera">
+<button id="ocrBtn" disabled>OCR準備中...</button>
+<div id="status"></div>
+
+<h4>仮リスト</h4>
+<div id="tempList"></div>
+
+<h4>注文</h4>
+<div id="excelArea">
+<div id="outSite"></div>
+<div id="outAddr"></div>
+<table>
+<tr><th>品番</th><th>内容</th><th>数</th><th>✕</th></tr>
+<tbody id="orderTable"></tbody>
+</table>
+</div>
+
+<button onclick="saveHistory()">保存</button>
+<button onclick="sendLine()">LINE</button>
+<button onclick="sendMail()">メール</button>
+<button onclick="capture()">📸共有</button>
+
+<h4>履歴</h4>
+<div id="history"></div>
+
+<script>
+let tempItems=[];
+let orderItems=[];
+let history=JSON.parse(localStorage.getItem("history")||"[]");
+
+let master={
+  "VVF2.0-3C":"VVFケーブル2.0 3芯"
+};
+
+let worker=null;
+let ready=false;
+let reading=false;
+
+// OCR初期化
+(async()=>{
+  status.innerText="OCR準備中...";
+  worker=await Tesseract.createWorker();
+  await worker.loadLanguage('eng');
+  await worker.initialize('eng');
+  ready=true;
+
+  ocrBtn.disabled=false;
+  ocrBtn.innerText="読み取り";
+})();
+
+// OCR
+ocrBtn.onclick=readOCR;
+
+async function readOCR(){
+  if(reading) return;
+  if(!ready) return alert("準備中");
+
+  let file=camera.files[0];
+  if(!file) return alert("画像選択");
+
+  reading=true;
+  status.innerText="読み取り中...";
+
+  try{
+    let res=await worker.recognize(file);
+    tempItems=[...new Set(
+      (res.data.text.match(/[A-Z0-9\-]{4,}/g)||[])
+      .filter(x=>!/^[0-9]+$/.test(x))
+    )];
+
+    renderTemp();
+    status.innerText="完了";
+  }catch{
+    status.innerText="エラー";
+  }
+
+  reading=false;
+}
+
+// 仮リスト
+function renderTemp(){
+  let el=tempList;
+  el.innerHTML="";
+
+  tempItems.forEach((c,i)=>{
+    el.innerHTML+=`
+    <div class="item">
+      ${c}
+      <input id="tq${i}" type="number" value="1">
+      <button onclick="addItem('${c}',${i})">追加</button>
+      <button onclick="removeTemp(${i})">削除</button>
+    </div>`;
+  });
+}
+
+function removeTemp(i){
+  tempItems.splice(i,1);
+  renderTemp();
+}
+
+// 注文追加
+function addItem(code,i){
+  let qty=Number(document.getElementById("tq"+i).value);
+
+  let exist=orderItems.find(x=>x.code===code);
+
+  if(exist){
+    exist.qty+=qty;
+  }else{
+    orderItems.push({
+      code,
+      qty,
+      comment: master[code]||""
+    });
+  }
+
+  // 仮から削除
+  tempItems.splice(i,1);
+  renderTemp();
+  renderOrder();
+
+  navigator.vibrate?.(50);
+}
+
+// 注文表示
+function renderOrder(){
+  let el=orderTable;
+  el.innerHTML="";
+
+  outSite.innerText="現場:"+siteName.value;
+  outAddr.innerText="住所:"+siteAddress.value;
+
+  orderItems.forEach((i,index)=>{
+    el.innerHTML+=`
+    <tr>
+      <td>${i.code}</td>
+      <td>
+        <input value="${i.comment||""}"
+        onchange="orderItems[${index}].comment=this.value">
+      </td>
+      <td>
+        <input type="number" value="${i.qty}"
+        onchange="orderItems[${index}].qty=Number(this.value)">
+      </td>
+      <td><button onclick="removeOrder(${index})">✕</button></td>
+    </tr>`;
+  });
+}
+
+function removeOrder(i){
+  orderItems.splice(i,1);
+  renderOrder();
+}
+
+// GPS
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+
+    siteAddress.value="取得中...";
+
+    try{
+      let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let d=await res.json();
+      let a=d.address||{};
+
+      siteAddress.value=(a.city||"")+ (a.town||"")+ (a.road||"")+ (a.house_number||"");
+    }catch{
+      siteAddress.value=lat.toFixed(5)+","+lon.toFixed(5);
+    }
+
+  },()=>{
+    alert("GPS失敗");
+  });
+}
+
+// 履歴
+function saveHistory(){
+  history.unshift({
+    site:siteName.value,
+    addr:siteAddress.value,
+    items:JSON.parse(JSON.stringify(orderItems))
+  });
+
+  localStorage.setItem("history",JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory(){
+  historyDiv.innerHTML="";
+  history.forEach((h,i)=>{
+    historyDiv.innerHTML+=`
+    <div class="item">
+      ${h.site}
+      <button onclick="loadHistory(${i})">呼び出し</button>
+    </div>`;
+  });
+}
+
+function loadHistory(i){
+  let h=history[i];
+  siteName.value=h.site;
+  siteAddress.value=h.addr;
+  orderItems=JSON.parse(JSON.stringify(h.items));
+  renderOrder();
+}
+
+// 共有
+function buildText(){
+  let t="【注文】\n";
+  t+=siteName.value+"\n"+siteAddress.value+"\n";
+  orderItems.forEach(i=>{
+    t+=`${i.code} ${i.qty} ${i.comment||""}\n`;
+  });
+  return t;
+}
+
+function sendLine(){
+  window.open("https://line.me/R/msg/text/?"+encodeURIComponent(buildText()));
+}
+
+function sendMail(){
+  location.href="mailto:?body="+encodeURIComponent(buildText());
+}
+
+function capture(){
+  html2canvas(excelArea).then(c=>{
+    c.toBlob(b=>{
+      let f=new File([b],"order.png");
+      navigator.share({files:[f]});
+    });
+  });
+}
+
+// 初期
+renderHistory();
+</script>
+
+</body>
+</html>
