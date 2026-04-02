@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文アプリ（高速版）</title>
+<title>現場注文アプリ（完成安定版）</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
@@ -12,7 +12,7 @@ body { font-family:sans-serif; padding:10px; background:#f2f2f2;}
 button { width:100%; padding:14px; margin:6px 0; font-size:18px;}
 input { padding:10px; margin:4px 0; width:100%;}
 .item { background:#fff; padding:10px; margin:5px 0; border-radius:8px;}
-.small { font-size:12px; color:#555;}
+.loading { color:red; font-weight:bold; }
 </style>
 </head>
 
@@ -20,101 +20,69 @@ input { padding:10px; margin:4px 0; width:100%;}
 
 <h2>🏠 現場</h2>
 <input id="siteName" placeholder="現場名">
-<input id="siteAddress" placeholder="住所">
+<input id="siteAddress" placeholder="住所（番地まで）">
 <button onclick="getLocation()">📍 GPS取得</button>
 
 <h2>📸 OCR</h2>
 <input type="file" accept="image/*" capture="environment" id="camera">
-<button onclick="readOCR()">高速読み取り</button>
+<button onclick="readOCR()">読み取り</button>
 <div id="status"></div>
 <div id="candidates"></div>
 <button onclick="addSelected()">選択追加</button>
 
-<h2>⭐ よく使う</h2>
-<input id="favCode" placeholder="品番">
-<input id="favComment" placeholder="内容">
-<button onclick="addFavorite()">登録</button>
-<div id="favorites"></div>
-
 <h2>📋 注文</h2>
 <div id="list"></div>
-
-<button onclick="saveHistory()">💾 保存</button>
-<button onclick="sendLine()">LINE</button>
-<button onclick="sendMail()">メール</button>
-<button onclick="printList()">印刷</button>
-
-<h2>📂 履歴</h2>
-<div id="history"></div>
 
 <script>
 // ===== データ =====
 let items = [];
 let candidates = [];
-let favorites = JSON.parse(localStorage.getItem("favorites")||"[]");
-
-// ===== OCR 初期化 =====
 let worker;
+let ocrReady = false;
+
+// ===== OCR 初期化（1回だけ）=====
 async function initOCR(){
   worker = await Tesseract.createWorker();
   await worker.loadLanguage('eng');
   await worker.initialize('eng');
-  await worker.setParameters({
-    tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
-    tessedit_pageseg_mode:6
-  });
+  ocrReady = true;
 }
 initOCR();
-
-// ===== 画像軽量化 =====
-async function preprocessImage(file){
-  return new Promise(resolve=>{
-    const img = new Image();
-    const reader = new FileReader();
-
-    reader.onload = e=> img.src = e.target.result;
-
-    img.onload = ()=>{
-      const canvas = document.createElement("canvas");
-      const scale = 0.5;
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-
-      const ctx = canvas.getContext("2d");
-      ctx.filter = "grayscale(1) contrast(2)";
-      ctx.drawImage(img,0,0,canvas.width,canvas.height);
-
-      resolve(canvas);
-    };
-
-    reader.readAsDataURL(file);
-  });
-}
 
 // ===== OCR =====
 async function readOCR(){
   const file = camera.files[0];
   if(!file) return alert("画像選択");
 
-  status.innerText="解析中...";
+  if(!ocrReady){
+    status.innerHTML = "<div class='loading'>OCR準備中...</div>";
+    return;
+  }
 
-  const canvas = await preprocessImage(file);
-  const { data } = await worker.recognize(canvas);
+  status.innerHTML = "<div class='loading'>読み取り中...</div>";
 
-  candidates = extractCodes(data.text);
-  renderCandidates();
+  try{
+    const result = await worker.recognize(file);
+    const text = result.data.text;
 
-  status.innerText="完了";
+    candidates = extractCodes(text);
+    renderCandidates();
+
+    status.innerHTML = "完了";
+
+  }catch(e){
+    status.innerHTML = "エラー";
+  }
 }
 
-// ===== 品番抽出 =====
+// ===== 品番抽出（安定重視）=====
 function extractCodes(text){
   return [...new Set(
-    (text.match(/[A-Z]{2,}-?\d{2,}/g)||[])
+    (text.match(/[A-Z0-9\-]{3,}/g) || [])
   )];
 }
 
-// ===== 候補 =====
+// ===== 候補表示 =====
 function renderCandidates(){
   candidatesDiv.innerHTML="";
   candidates.forEach((c,i)=>{
@@ -126,164 +94,77 @@ function renderCandidates(){
   });
 }
 
+// ===== 追加 =====
 function addSelected(){
   candidates.forEach((c,i)=>{
     if(document.getElementById("c"+i).checked){
       let qty = Number(document.getElementById("q"+i).value);
-      addItem(c,"",qty);
+      addItem(c,qty);
     }
   });
   renderList();
 }
 
-// ===== 注文 =====
-function addItem(code, comment="", qty=1){
+function addItem(code,qty){
   let exist = items.find(x=>x.code===code);
   if(exist){ exist.qty+=qty; }
-  else{ items.push({code,comment,qty}); }
+  else{ items.push({code,qty}); }
 }
 
+// ===== リスト =====
 function renderList(){
   list.innerHTML="";
   items.forEach((i,index)=>{
     list.innerHTML+=`
     <div class="item">
-      <b>${i.code}</b><br>
-      <span class="small">${i.comment||""}</span>
+      <b>${i.code}</b>
       <input type="number" value="${i.qty}"
       onchange="items[${index}].qty=this.value">
-      <button onclick="removeItem(${index})">削除</button>
     </div>`;
   });
 }
 
-function removeItem(i){
-  items.splice(i,1);
-  renderList();
-}
-
-// ===== お気に入り =====
-function addFavorite(){
-  let code=favCode.value;
-  let comment=favComment.value;
-  if(!code) return;
-
-  favorites.push({code,comment});
-  localStorage.setItem("favorites",JSON.stringify(favorites));
-  renderFavorites();
-}
-
-function renderFavorites(){
-  favoritesDiv.innerHTML="";
-  favorites.forEach((f,i)=>{
-    favoritesDiv.innerHTML+=`
-    <div class="item">
-      <b>${f.code}</b><br>
-      <span class="small">${f.comment}</span>
-      <input type="number" id="fq${i}" value="1">
-      <button onclick="addFav(${i})">追加</button>
-    </div>`;
-  });
-}
-
-function addFav(i){
-  let qty=Number(document.getElementById("fq"+i).value);
-  addItem(favorites[i].code,favorites[i].comment,qty);
-  renderList();
-}
-
-// ===== GPS → 住所 =====
+// ===== GPS → 住所（ガチ安定版）=====
 function getLocation(){
   navigator.geolocation.getCurrentPosition(async pos=>{
-    let lat=pos.coords.latitude;
-    let lon=pos.coords.longitude;
+    let lat = pos.coords.latitude;
+    let lon = pos.coords.longitude;
 
-    siteAddress.value="取得中...";
+    siteAddress.value = "取得中...";
 
     try{
-      let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-      let data=await res.json();
-      siteAddress.value=data.display_name || `${lat},${lon}`;
+      let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let data = await res.json();
+
+      let a = data.address || {};
+
+      // 日本住所を構成（県除外・番地まで）
+      let addr = "";
+
+      if(a.city) addr += a.city;
+      else if(a.town) addr += a.town;
+
+      if(a.suburb) addr += a.suburb;
+      if(a.road) addr += a.road;
+      if(a.house_number) addr += a.house_number;
+
+      // fallback（もし足りない場合）
+      if(!addr){
+        addr = data.display_name || "";
+      }
+
+      siteAddress.value = addr;
+
     }catch{
-      siteAddress.value=`緯度:${lat.toFixed(5)} 経度:${lon.toFixed(5)}`;
+      siteAddress.value = `${lat.toFixed(5)},${lon.toFixed(5)}`;
     }
+
+  },()=>{
+    alert("GPS失敗");
+  },{
+    enableHighAccuracy:true
   });
 }
-
-// ===== メッセージ =====
-function buildMessage(){
-  let msg="【注文リスト】\n";
-  msg+=`現場:${siteName.value}\n`;
-  msg+=`住所:${siteAddress.value}\n\n`;
-
-  items.forEach(i=>{
-    msg+=`${i.code} × ${i.qty} ${i.comment||""}\n`;
-  });
-  return msg;
-}
-
-// ===== 送信 =====
-function sendLine(){
-  window.open("https://line.me/R/msg/text/?"+encodeURIComponent(buildMessage()));
-}
-
-function sendMail(){
-  location.href=`mailto:?subject=注文&body=${encodeURIComponent(buildMessage())}`;
-}
-
-// ===== 印刷 =====
-function printList(){
-  let rows="";
-  items.forEach(i=>{
-    rows+=`<tr><td>${i.code}</td><td>${i.comment}</td><td>${i.qty}</td></tr>`;
-  });
-
-  let w=window.open("");
-  w.document.write(`
-  <h2>注文書</h2>
-  <p>${siteName.value}</p>
-  <p>${siteAddress.value}</p>
-  <table border="1">
-  <tr><th>品番</th><th>内容</th><th>数量</th></tr>
-  ${rows}
-  </table>
-  `);
-  w.print();
-}
-
-// ===== 履歴 =====
-function saveHistory(){
-  let history=JSON.parse(localStorage.getItem("history")||"[]");
-  history.unshift({site:siteName.value,addr:siteAddress.value,items:items});
-  localStorage.setItem("history",JSON.stringify(history));
-  renderHistory();
-}
-
-function renderHistory(){
-  let history=JSON.parse(localStorage.getItem("history")||"[]");
-  historyDiv.innerHTML="";
-  history.forEach((h,i)=>{
-    historyDiv.innerHTML+=`
-    <div class="item">
-      ${h.site}
-      <button onclick="loadHistory(${i})">呼び出し</button>
-    </div>`;
-  });
-}
-
-function loadHistory(i){
-  let history=JSON.parse(localStorage.getItem("history")||"[]");
-  let h=history[i];
-  siteName.value=h.site;
-  siteAddress.value=h.addr;
-  items=JSON.parse(JSON.stringify(h.items));
-  renderList();
-}
-
-// 初期
-renderFavorites();
-renderHistory();
-renderList();
 </script>
 
 </body>
