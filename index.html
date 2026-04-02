@@ -1,1 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>現場注文アプリ PRO FINAL</title>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<style>
+body{font-family:sans-serif;background:#f2f2f2;padding:6px;}
+button{width:100%;padding:10px;margin:3px 0;font-size:15px;}
+input{padding:6px;width:100%;font-size:14px;}
+.item{background:#fff;padding:6px;margin:3px 0;border-radius:6px;}
+table{width:100%;border-collapse:collapse;background:#fff;}
+th,td{border:1px solid #000;padding:4px;text-align:center;font-size:13px;}
+th{background:#ddd;}
+#status{font-size:13px;color:#d00;}
+</style>
+</head>
+
+<body>
+
+<h3>🏠 現場</h3>
+<input id="siteName" placeholder="現場名">
+<input id="siteAddress" placeholder="住所">
+<button onclick="getLocation()">GPS取得</button>
+
+<h3>📸 OCR</h3>
+<input type="file" accept="image/*" capture="environment" id="camera">
+<button id="ocrBtn" disabled>OCR準備中...</button>
+<div id="status"></div>
+
+<h4>仮リスト</h4>
+<div id="tempList"></div>
+
+<h4>注文</h4>
+<div id="excelArea">
+<div id="outSite"></div>
+<div id="outAddr"></div>
+<table>
+<tr><th>品番</th><th>内容</th><th>数</th><th>✕</th></tr>
+<tbody id="orderTable"></tbody>
+</table>
+</div>
+
+<button onclick="saveHistory()">保存</button>
+<button onclick="sendLine()">LINE</button>
+<button onclick="sendMail()">メール</button>
+<button onclick="capture()">📸共有</button>
+
+<h4>履歴</h4>
+<div id="history"></div>
+
+<script>
+let tempItems=[];
+let orderItems=JSON.parse(localStorage.getItem("orderItems")||"[]");
+let history=JSON.parse(localStorage.getItem("history")||"[]");
+
+let master={
+  "VVF2.0-3C":"VVFケーブル2.0 3芯"
+};
+
+let worker=null;
+let ready=false;
+let reading=false;
+
+// OCR初期化
+(async()=>{
+  status.innerText="OCRエンジン読込中...";
+  worker=await Tesseract.createWorker({
+    logger: m=>{
+      if(m.status==="recognizing text"){
+        status.innerText="OCR "+Math.round(m.progress*100)+"%";
+      }
+    }
+  });
+
+  await worker.loadLanguage('eng');
+  await worker.initialize('eng');
+
+  ready=true;
+  ocrBtn.disabled=false;
+  ocrBtn.innerText="読み取り";
+  status.innerText="準備完了";
+})();
+
+// OCR
+ocrBtn.onclick=readOCR;
+
+async function readOCR(){
+  if(reading) return;
+  if(!ready) return alert("準備中");
+
+  let file=camera.files[0];
+  if(!file) return alert("画像選択");
+
+  reading=true;
+  ocrBtn.disabled=true;
+
+  try{
+    let res=await worker.recognize(file);
+
+    tempItems=[...new Set(
+      (res.data.text.match(/[A-Z0-9\-]{4,}/g)||[])
+      .filter(x=>/[A-Z]/.test(x))
+      .filter(x=>!/^[0-9]+$/.test(x))
+    )];
+
+    renderTemp();
+    status.innerText="完了";
+
+  }catch{
+    status.innerText="OCRエラー";
+  }
+
+  reading=false;
+  ocrBtn.disabled=false;
+}
+
+// 仮リスト
+function renderTemp(){
+  tempList.innerHTML="";
+  tempItems.forEach((c,i)=>{
+    tempList.innerHTML+=`
+    <div class="item">
+      ${c}
+      <input id="tq${i}" type="number" value="1">
+      <button onclick="addItem('${c}',${i})">追加</button>
+      <button onclick="removeTemp(${i})">削除</button>
+    </div>`;
+  });
+}
+
+function removeTemp(i){
+  tempItems.splice(i,1);
+  renderTemp();
+}
+
+// 注文
+function addItem(code,i){
+  let qty=Number(document.getElementById("tq"+i).value);
+
+  let exist=orderItems.find(x=>x.code===code);
+
+  if(exist){
+    exist.qty+=qty;
+  }else{
+    orderItems.push({
+      code,
+      qty,
+      comment: master[code]||""
+    });
+  }
+
+  tempItems.splice(i,1);
+  renderTemp();
+  renderOrder();
+
+  status.innerText=code+" 追加";
+  navigator.vibrate?.(50);
+
+  saveLocal();
+}
+
+function renderOrder(){
+  orderTable.innerHTML="";
+
+  outSite.innerText="現場:"+siteName.value;
+  outAddr.innerText="住所:"+siteAddress.value;
+
+  orderItems.forEach((i,index)=>{
+    orderTable.innerHTML+=`
+    <tr>
+      <td>${i.code}</td>
+      <td>
+        <input value="${i.comment||''}"
+        onchange="orderItems[${index}].comment=this.value;saveLocal();">
+      </td>
+      <td>
+        <input type="number" value="${i.qty}"
+        onchange="orderItems[${index}].qty=Number(this.value);saveLocal();">
+      </td>
+      <td><button onclick="removeOrder(${index})">✕</button></td>
+    </tr>`;
+  });
+}
+
+function removeOrder(i){
+  orderItems.splice(i,1);
+  renderOrder();
+  saveLocal();
+}
+
+// GPS
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+
+    siteAddress.value="取得中...";
+
+    try{
+      let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let d=await res.json();
+      let a=d.address||{};
+
+      let addr=(a.city||"")+(a.town||"")+(a.road||"")+(a.house_number||"");
+      siteAddress.value=addr || d.display_name;
+
+    }catch{
+      siteAddress.value=lat.toFixed(5)+","+lon.toFixed(5);
+    }
+
+  },()=>{
+    alert("GPS失敗");
+  });
+}
+
+// 履歴
+function saveHistory(){
+  history.unshift({
+    site:siteName.value,
+    addr:siteAddress.value,
+    items:JSON.parse(JSON.stringify(orderItems))
+  });
+
+  history=history.slice(0,20);
+  localStorage.setItem("history",JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory(){
+  historyDiv.innerHTML="";
+  history.forEach((h,i)=>{
+    historyDiv.innerHTML+=`
+    <div class="item">
+      ${h.site}
+      <button onclick="loadHistory(${i})">呼出</button>
+    </div>`;
+  });
+}
+
+function loadHistory(i){
+  let h=history[i];
+  siteName.value=h.site;
+  siteAddress.value=h.addr;
+  orderItems=JSON.parse(JSON.stringify(h.items));
+  renderOrder();
+}
+
+// 共有
+function buildText(){
+  let t="【注文】\n";
+  t+=siteName.value+"\n"+siteAddress.value+"\n";
+  orderItems.forEach(i=>{
+    t+=`${i.code} ${i.qty} ${i.comment||""}\n`;
+  });
+  return t;
+}
+
+function sendLine(){
+  window.open("https://line.me/R/msg/text/?"+encodeURIComponent(buildText()));
+}
+
+function sendMail(){
+  location.href="mailto:?body="+encodeURIComponent(buildText());
+}
+
+function capture(){
+  html2canvas(excelArea).then(c=>{
+    c.toBlob(b=>{
+      if(navigator.share){
+        navigator.share({files:[new File([b],"order.png")]});
+      }else{
+        alert("共有未対応端末");
+      }
+    });
+  });
+}
+
+// 自動保存
+function saveLocal(){
+  localStorage.setItem("orderItems",JSON.stringify(orderItems));
+}
+
+// 初期
+renderOrder();
+renderHistory();
+</script>
+
+</body>
+</html>
