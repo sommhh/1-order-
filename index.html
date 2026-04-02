@@ -3,151 +3,137 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文アプリ（完成版）</title>
+<title>注文アプリ</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <style>
 body { font-family:sans-serif; padding:10px; background:#f2f2f2;}
-button { width:100%; padding:14px; margin:6px 0; font-size:18px;}
-input { padding:10px; margin:4px 0; width:100%;}
+button { width:100%; padding:14px; margin:5px 0; font-size:18px;}
+input { padding:8px; width:100%; margin:3px 0;}
+
 .item { background:#fff; padding:10px; margin:5px 0; border-radius:8px;}
-.loading { color:red; font-weight:bold; }
+
+table {
+  width:100%;
+  border-collapse: collapse;
+  background:#fff;
+}
+th,td {
+  border:1px solid #000;
+  padding:8px;
+  text-align:center;
+}
+th { background:#ddd; }
 </style>
 </head>
 
 <body>
 
-<h2>📸 OCR読み取り</h2>
+<h2>📸 OCR</h2>
 <input type="file" accept="image/*" capture="environment" id="camera">
-<button id="ocrBtn" onclick="readOCR()" disabled>準備中...</button>
+<button onclick="readOCR()">読み取り</button>
 
 <div id="status"></div>
 
-<h3>🔎 仮リスト（ここで整理）</h3>
+<h3>🔎 仮リスト</h3>
 <div id="tempList"></div>
-<button onclick="addAllToOrder()">✔ 注文に追加</button>
 
-<h3>📋 注文リスト</h3>
-<div id="orderList"></div>
+<h3>📋 注文リスト（Excel風）</h3>
+<div id="excelArea">
+<table>
+<thead>
+<tr>
+<th>品番</th>
+<th>数量</th>
+<th>削除</th>
+</tr>
+</thead>
+<tbody id="orderTable"></tbody>
+</table>
+</div>
+
+<button onclick="sendLine()">LINE送信</button>
+<button onclick="sendMail()">メール送信</button>
+<button onclick="capture()">📸スクショ共有</button>
 
 <script>
-// ===== データ =====
 let tempItems = [];
 let orderItems = [];
 let worker;
-let ready = false;
 
-// ===== OCR初期化 =====
-async function initOCR(){
-  const btn = document.getElementById("ocrBtn");
-  const status = document.getElementById("status");
-
-  status.innerText = "OCR準備中...";
-
+// OCR初期化
+(async ()=>{
   worker = await Tesseract.createWorker();
   await worker.loadLanguage('eng');
   await worker.initialize('eng');
+})();
 
-  await worker.setParameters({
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
-  });
-
-  ready = true;
-  btn.disabled = false;
-  btn.innerText = "読み取り";
-
-  status.innerText = "準備完了";
-}
-initOCR();
-
-// ===== OCR =====
+// OCR
 async function readOCR(){
   const file = camera.files[0];
-  if(!file) return alert("画像選択");
+  if(!file) return;
 
-  if(!ready) return;
-
-  status.innerHTML = "<div class='loading'>読み取り中...</div>";
+  status.innerText="読み取り中...";
 
   const result = await worker.recognize(file);
-  const text = result.data.text;
+  tempItems = extract(result.data.text);
 
-  tempItems = extractCodes(text);
   renderTemp();
-
-  status.innerText = "完了";
+  status.innerText="完了";
 }
 
-// ===== 抽出（精度UP）=====
-function extractCodes(text){
-  let arr = text.match(/[A-Z0-9\-]{4,}/g) || [];
-
+// 抽出
+function extract(text){
   return [...new Set(
-    arr.filter(x =>
-      !/^\d+$/.test(x) && // 数字だけ除外
-      x.length >= 4
-    )
+    (text.match(/[A-Z0-9\-]{4,}/g)||[])
   )];
 }
 
-// ===== 仮リスト =====
+// 仮リスト
 function renderTemp(){
-  const el = document.getElementById("tempList");
-  el.innerHTML = "";
-
-  tempItems.forEach((code,i)=>{
-    el.innerHTML += `
+  tempList.innerHTML="";
+  tempItems.forEach((c,i)=>{
+    tempList.innerHTML+=`
     <div class="item">
-      <input value="${code}" onchange="editTemp(${i},this.value)">
-      数量:<input type="number" value="1" id="tq${i}">
-      <button onclick="removeTemp(${i})">削除</button>
+      ${c}
+      数量:<input type="number" id="tq${i}" value="1">
+      <button onclick="addItem('${c}',${i})">➕追加</button>
+      <button onclick="removeTemp(${i})">❌削除</button>
     </div>`;
   });
 }
 
-// 編集
-function editTemp(i,val){
-  tempItems[i] = val;
-}
-
-// 削除
+// 仮削除
 function removeTemp(i){
   tempItems.splice(i,1);
   renderTemp();
 }
 
-// ===== 注文へ追加 =====
-function addAllToOrder(){
-  tempItems.forEach((code,i)=>{
-    let qty = Number(document.getElementById("tq"+i).value);
+// 追加
+function addItem(code,i){
+  let qty = Number(document.getElementById("tq"+i).value);
 
-    let exist = orderItems.find(x=>x.code===code);
-    if(exist){
-      exist.qty += qty;
-    }else{
-      orderItems.push({code,qty});
-    }
-  });
+  let exist = orderItems.find(x=>x.code===code);
+  if(exist){ exist.qty += qty; }
+  else{ orderItems.push({code,qty}); }
 
-  tempItems = [];
-  renderTemp();
   renderOrder();
 }
 
-// ===== 注文リスト =====
+// Excel表示
 function renderOrder(){
-  const el = document.getElementById("orderList");
-  el.innerHTML = "";
+  const el = document.getElementById("orderTable");
+  el.innerHTML="";
 
   orderItems.forEach((i,index)=>{
-    el.innerHTML += `
-    <div class="item">
-      <b>${i.code}</b>
-      数量:<input type="number" value="${i.qty}"
-      onchange="orderItems[${index}].qty=this.value">
-      <button onclick="removeOrder(${index})">削除</button>
-    </div>`;
+    el.innerHTML+=`
+    <tr>
+      <td>${i.code}</td>
+      <td><input value="${i.qty}" onchange="orderItems[${index}].qty=this.value"></td>
+      <td><button onclick="removeOrder(${index})">削除</button></td>
+    </tr>`;
   });
 }
 
@@ -155,6 +141,42 @@ function renderOrder(){
 function removeOrder(i){
   orderItems.splice(i,1);
   renderOrder();
+}
+
+// 文字生成
+function buildText(){
+  let t="【注文】\n";
+  orderItems.forEach(i=>{
+    t+=`${i.code} × ${i.qty}\n`;
+  });
+  return t;
+}
+
+// LINE
+function sendLine(){
+  window.open("https://line.me/R/msg/text/?"+encodeURIComponent(buildText()));
+}
+
+// メール
+function sendMail(){
+  location.href="mailto:?body="+encodeURIComponent(buildText());
+}
+
+// スクショ
+function capture(){
+  html2canvas(document.getElementById("excelArea")).then(canvas=>{
+    canvas.toBlob(blob=>{
+      const file = new File([blob],"order.png",{type:"image/png"});
+      if(navigator.share){
+        navigator.share({
+          files:[file],
+          title:"注文リスト"
+        });
+      }else{
+        alert("共有未対応");
+      }
+    });
+  });
 }
 </script>
 
