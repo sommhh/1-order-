@@ -3,32 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文アプリ</title>
+<title>現場注文アプリ（高速版）</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
 body { font-family:sans-serif; padding:10px; background:#f2f2f2;}
-h2 { margin-top:20px; }
-button { width:100%; padding:12px; margin:5px 0; font-size:16px;}
-input { padding:8px; margin:3px 0; width:100%;}
+button { width:100%; padding:14px; margin:6px 0; font-size:18px;}
+input { padding:10px; margin:4px 0; width:100%;}
 .item { background:#fff; padding:10px; margin:5px 0; border-radius:8px;}
 .small { font-size:12px; color:#555;}
-table { width:100%; border-collapse: collapse;}
-th,td { border:1px solid #000; padding:6px;}
 </style>
 </head>
 
 <body>
 
-<h2>🏠 現場情報</h2>
+<h2>🏠 現場</h2>
 <input id="siteName" placeholder="現場名">
 <input id="siteAddress" placeholder="住所">
 <button onclick="getLocation()">📍 GPS取得</button>
 
 <h2>📸 OCR</h2>
 <input type="file" accept="image/*" capture="environment" id="camera">
-<button onclick="readOCR()">読み取り</button>
+<button onclick="readOCR()">高速読み取り</button>
+<div id="status"></div>
 <div id="candidates"></div>
 <button onclick="addSelected()">選択追加</button>
 
@@ -38,12 +36,12 @@ th,td { border:1px solid #000; padding:6px;}
 <button onclick="addFavorite()">登録</button>
 <div id="favorites"></div>
 
-<h2>📋 注文リスト</h2>
+<h2>📋 注文</h2>
 <div id="list"></div>
 
 <button onclick="saveHistory()">💾 保存</button>
-<button onclick="sendLine()">LINE送信</button>
-<button onclick="sendMail()">メール送信</button>
+<button onclick="sendLine()">LINE</button>
+<button onclick="sendMail()">メール</button>
 <button onclick="printList()">印刷</button>
 
 <h2>📂 履歴</h2>
@@ -55,27 +53,72 @@ let items = [];
 let candidates = [];
 let favorites = JSON.parse(localStorage.getItem("favorites")||"[]");
 
+// ===== OCR 初期化 =====
+let worker;
+async function initOCR(){
+  worker = await Tesseract.createWorker();
+  await worker.loadLanguage('eng');
+  await worker.initialize('eng');
+  await worker.setParameters({
+    tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-',
+    tessedit_pageseg_mode:6
+  });
+}
+initOCR();
+
+// ===== 画像軽量化 =====
+async function preprocessImage(file){
+  return new Promise(resolve=>{
+    const img = new Image();
+    const reader = new FileReader();
+
+    reader.onload = e=> img.src = e.target.result;
+
+    img.onload = ()=>{
+      const canvas = document.createElement("canvas");
+      const scale = 0.5;
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext("2d");
+      ctx.filter = "grayscale(1) contrast(2)";
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+
+      resolve(canvas);
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
 // ===== OCR =====
 async function readOCR(){
   const file = camera.files[0];
   if(!file) return alert("画像選択");
 
-  const result = await Tesseract.recognize(file,'eng');
-  const text = result.data.text;
+  status.innerText="解析中...";
 
-  candidates = extractCodes(text);
+  const canvas = await preprocessImage(file);
+  const { data } = await worker.recognize(canvas);
+
+  candidates = extractCodes(data.text);
   renderCandidates();
+
+  status.innerText="完了";
 }
 
+// ===== 品番抽出 =====
 function extractCodes(text){
-  let raw = text.match(/[A-Z0-9\-]{4,}/g)||[];
-  return [...new Set(raw.filter(c=>!/^\d+$/.test(c)))];
+  return [...new Set(
+    (text.match(/[A-Z]{2,}-?\d{2,}/g)||[])
+  )];
 }
 
+// ===== 候補 =====
 function renderCandidates(){
   candidatesDiv.innerHTML="";
   candidates.forEach((c,i)=>{
-    candidatesDiv.innerHTML += `
+    candidatesDiv.innerHTML+=`
     <div class="item">
       <input type="checkbox" id="c${i}">${c}
       <input type="number" id="q${i}" value="1">
@@ -93,21 +136,21 @@ function addSelected(){
   renderList();
 }
 
-// ===== アイテム =====
+// ===== 注文 =====
 function addItem(code, comment="", qty=1){
   let exist = items.find(x=>x.code===code);
-  if(exist){ exist.qty += qty; }
-  else{ items.push({code, comment, qty}); }
+  if(exist){ exist.qty+=qty; }
+  else{ items.push({code,comment,qty}); }
 }
 
 function renderList(){
   list.innerHTML="";
   items.forEach((i,index)=>{
-    list.innerHTML += `
+    list.innerHTML+=`
     <div class="item">
       <b>${i.code}</b><br>
-      <span class="small">${i.comment||""}</span><br>
-      数量:<input type="number" value="${i.qty}"
+      <span class="small">${i.comment||""}</span>
+      <input type="number" value="${i.qty}"
       onchange="items[${index}].qty=this.value">
       <button onclick="removeItem(${index})">削除</button>
     </div>`;
@@ -121,11 +164,11 @@ function removeItem(i){
 
 // ===== お気に入り =====
 function addFavorite(){
-  let code = favCode.value;
-  let comment = favComment.value;
+  let code=favCode.value;
+  let comment=favComment.value;
   if(!code) return;
 
-  favorites.push({code, comment});
+  favorites.push({code,comment});
   localStorage.setItem("favorites",JSON.stringify(favorites));
   renderFavorites();
 }
@@ -133,7 +176,7 @@ function addFavorite(){
 function renderFavorites(){
   favoritesDiv.innerHTML="";
   favorites.forEach((f,i)=>{
-    favoritesDiv.innerHTML += `
+    favoritesDiv.innerHTML+=`
     <div class="item">
       <b>${f.code}</b><br>
       <span class="small">${f.comment}</span>
@@ -144,17 +187,26 @@ function renderFavorites(){
 }
 
 function addFav(i){
-  let qty = Number(document.getElementById("fq"+i).value);
-  addItem(favorites[i].code, favorites[i].comment, qty);
+  let qty=Number(document.getElementById("fq"+i).value);
+  addItem(favorites[i].code,favorites[i].comment,qty);
   renderList();
 }
 
-// ===== GPS =====
+// ===== GPS → 住所 =====
 function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
-    let lat = pos.coords.latitude;
-    let lon = pos.coords.longitude;
-    siteAddress.value = `緯度:${lat.toFixed(5)} 経度:${lon.toFixed(5)}`;
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+
+    siteAddress.value="取得中...";
+
+    try{
+      let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let data=await res.json();
+      siteAddress.value=data.display_name || `${lat},${lon}`;
+    }catch{
+      siteAddress.value=`緯度:${lat.toFixed(5)} 経度:${lon.toFixed(5)}`;
+    }
   });
 }
 
@@ -186,37 +238,30 @@ function printList(){
     rows+=`<tr><td>${i.code}</td><td>${i.comment}</td><td>${i.qty}</td></tr>`;
   });
 
-  let win=window.open("");
-  win.document.write(`
+  let w=window.open("");
+  w.document.write(`
   <h2>注文書</h2>
   <p>${siteName.value}</p>
   <p>${siteAddress.value}</p>
-  <table>
+  <table border="1">
   <tr><th>品番</th><th>内容</th><th>数量</th></tr>
   ${rows}
   </table>
   `);
-  win.print();
+  w.print();
 }
 
 // ===== 履歴 =====
 function saveHistory(){
-  let history = JSON.parse(localStorage.getItem("history")||"[]");
-
-  history.unshift({
-    site:siteName.value,
-    addr:siteAddress.value,
-    items:items
-  });
-
+  let history=JSON.parse(localStorage.getItem("history")||"[]");
+  history.unshift({site:siteName.value,addr:siteAddress.value,items:items});
   localStorage.setItem("history",JSON.stringify(history));
   renderHistory();
 }
 
 function renderHistory(){
-  let history = JSON.parse(localStorage.getItem("history")||"[]");
+  let history=JSON.parse(localStorage.getItem("history")||"[]");
   historyDiv.innerHTML="";
-
   history.forEach((h,i)=>{
     historyDiv.innerHTML+=`
     <div class="item">
@@ -227,19 +272,18 @@ function renderHistory(){
 }
 
 function loadHistory(i){
-  let history = JSON.parse(localStorage.getItem("history")||"[]");
-  let h = history[i];
-  siteName.value = h.site;
-  siteAddress.value = h.addr;
-  items = JSON.parse(JSON.stringify(h.items));
+  let history=JSON.parse(localStorage.getItem("history")||"[]");
+  let h=history[i];
+  siteName.value=h.site;
+  siteAddress.value=h.addr;
+  items=JSON.parse(JSON.stringify(h.items));
   renderList();
 }
 
-// 初期化
+// 初期
 renderFavorites();
 renderHistory();
 renderList();
-
 </script>
 
 </body>
