@@ -1,1 +1,172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>現場注文アプリ（安定版）</title>
 
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<style>
+body { font-family:sans-serif; padding:10px; background:#f2f2f2;}
+button { width:100%; padding:14px; margin:6px 0; font-size:18px;}
+input { padding:10px; margin:4px 0; width:100%;}
+.item { background:#fff; padding:10px; margin:5px 0; border-radius:8px;}
+.loading { color:red; font-weight:bold; }
+</style>
+</head>
+
+<body>
+
+<h2>🏠 現場</h2>
+<input id="siteName" placeholder="現場名">
+<input id="siteAddress" placeholder="住所（番地まで）">
+<button onclick="getLocation()">📍 GPS取得</button>
+
+<h2>📸 OCR</h2>
+<input type="file" accept="image/*" capture="environment" id="camera">
+<button onclick="readOCR()">読み取り</button>
+<div id="status"></div>
+<div id="candidates"></div>
+<button onclick="addSelected()">選択追加</button>
+
+<h2>📋 注文</h2>
+<div id="list"></div>
+
+<script>
+// ===== データ =====
+let items = [];
+let candidates = [];
+let worker = null;
+let ocrReady = false;
+
+// ===== OCR 初期化 =====
+async function initOCR(){
+  worker = await Tesseract.createWorker();
+  await worker.loadLanguage('eng');
+  await worker.initialize('eng');
+  ocrReady = true;
+}
+initOCR();
+
+// ===== OCR =====
+async function readOCR(){
+  const file = document.getElementById("camera").files[0];
+  const status = document.getElementById("status");
+
+  if(!file) return alert("画像選択");
+
+  if(!ocrReady){
+    status.innerHTML = "<div class='loading'>OCR準備中...</div>";
+    return;
+  }
+
+  status.innerHTML = "<div class='loading'>読み取り中...</div>";
+
+  try{
+    const result = await worker.recognize(file);
+    const text = result.data.text;
+
+    candidates = extractCodes(text);
+    renderCandidates();
+
+    status.innerHTML = "完了";
+
+  }catch(e){
+    status.innerHTML = "エラー";
+  }
+}
+
+// ===== 品番抽出 =====
+function extractCodes(text){
+  return [...new Set(
+    (text.match(/[A-Z0-9\-]{3,}/g) || [])
+  )];
+}
+
+// ===== 候補表示 =====
+function renderCandidates(){
+  const el = document.getElementById("candidates");
+  el.innerHTML = "";
+
+  candidates.forEach((c,i)=>{
+    el.innerHTML += `
+    <div class="item">
+      <input type="checkbox" id="c${i}">${c}
+      <input type="number" id="q${i}" value="1">
+    </div>`;
+  });
+}
+
+// ===== 追加 =====
+function addSelected(){
+  candidates.forEach((c,i)=>{
+    if(document.getElementById("c"+i)?.checked){
+      let qty = Number(document.getElementById("q"+i).value);
+      addItem(c, qty);
+    }
+  });
+  renderList();
+}
+
+function addItem(code, qty){
+  let exist = items.find(x=>x.code===code);
+  if(exist){ exist.qty += qty; }
+  else{ items.push({code, qty}); }
+}
+
+// ===== リスト =====
+function renderList(){
+  const el = document.getElementById("list");
+  el.innerHTML = "";
+
+  items.forEach((i,index)=>{
+    el.innerHTML += `
+    <div class="item">
+      <b>${i.code}</b>
+      <input type="number" value="${i.qty}"
+      onchange="items[${index}].qty=this.value">
+    </div>`;
+  });
+}
+
+// ===== GPS → 住所 =====
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    let lat = pos.coords.latitude;
+    let lon = pos.coords.longitude;
+
+    const input = document.getElementById("siteAddress");
+    input.value = "取得中...";
+
+    try{
+      let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      let data = await res.json();
+      let a = data.address || {};
+
+      let addr = "";
+
+      if(a.city) addr += a.city;
+      else if(a.town) addr += a.town;
+
+      if(a.suburb) addr += a.suburb;
+      if(a.road) addr += a.road;
+      if(a.house_number) addr += a.house_number;
+
+      if(!addr){
+        addr = data.display_name || "";
+      }
+
+      input.value = addr;
+
+    }catch{
+      input.value = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+    }
+  },()=>{
+    alert("GPS失敗");
+  });
+}
+</script>
+
+</body>
+</html>
