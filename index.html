@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文アプリ（安定版）</title>
+<title>現場注文アプリ（完成版）</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
@@ -18,153 +18,143 @@ input { padding:10px; margin:4px 0; width:100%;}
 
 <body>
 
-<h2>🏠 現場</h2>
-<input id="siteName" placeholder="現場名">
-<input id="siteAddress" placeholder="住所（番地まで）">
-<button onclick="getLocation()">📍 GPS取得</button>
-
-<h2>📸 OCR</h2>
+<h2>📸 OCR読み取り</h2>
 <input type="file" accept="image/*" capture="environment" id="camera">
-<button onclick="readOCR()">読み取り</button>
-<div id="status"></div>
-<div id="candidates"></div>
-<button onclick="addSelected()">選択追加</button>
+<button id="ocrBtn" onclick="readOCR()" disabled>準備中...</button>
 
-<h2>📋 注文</h2>
-<div id="list"></div>
+<div id="status"></div>
+
+<h3>🔎 仮リスト（ここで整理）</h3>
+<div id="tempList"></div>
+<button onclick="addAllToOrder()">✔ 注文に追加</button>
+
+<h3>📋 注文リスト</h3>
+<div id="orderList"></div>
 
 <script>
 // ===== データ =====
-let items = [];
-let candidates = [];
-let worker = null;
-let ocrReady = false;
+let tempItems = [];
+let orderItems = [];
+let worker;
+let ready = false;
 
-// ===== OCR 初期化 =====
+// ===== OCR初期化 =====
 async function initOCR(){
+  const btn = document.getElementById("ocrBtn");
+  const status = document.getElementById("status");
+
+  status.innerText = "OCR準備中...";
+
   worker = await Tesseract.createWorker();
   await worker.loadLanguage('eng');
   await worker.initialize('eng');
-  ocrReady = true;
+
+  await worker.setParameters({
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-'
+  });
+
+  ready = true;
+  btn.disabled = false;
+  btn.innerText = "読み取り";
+
+  status.innerText = "準備完了";
 }
 initOCR();
 
 // ===== OCR =====
 async function readOCR(){
-  const file = document.getElementById("camera").files[0];
-  const status = document.getElementById("status");
-
+  const file = camera.files[0];
   if(!file) return alert("画像選択");
 
-  if(!ocrReady){
-    status.innerHTML = "<div class='loading'>OCR準備中...</div>";
-    return;
-  }
+  if(!ready) return;
 
   status.innerHTML = "<div class='loading'>読み取り中...</div>";
 
-  try{
-    const result = await worker.recognize(file);
-    const text = result.data.text;
+  const result = await worker.recognize(file);
+  const text = result.data.text;
 
-    candidates = extractCodes(text);
-    renderCandidates();
+  tempItems = extractCodes(text);
+  renderTemp();
 
-    status.innerHTML = "完了";
-
-  }catch(e){
-    status.innerHTML = "エラー";
-  }
+  status.innerText = "完了";
 }
 
-// ===== 品番抽出 =====
+// ===== 抽出（精度UP）=====
 function extractCodes(text){
+  let arr = text.match(/[A-Z0-9\-]{4,}/g) || [];
+
   return [...new Set(
-    (text.match(/[A-Z0-9\-]{3,}/g) || [])
+    arr.filter(x =>
+      !/^\d+$/.test(x) && // 数字だけ除外
+      x.length >= 4
+    )
   )];
 }
 
-// ===== 候補表示 =====
-function renderCandidates(){
-  const el = document.getElementById("candidates");
+// ===== 仮リスト =====
+function renderTemp(){
+  const el = document.getElementById("tempList");
   el.innerHTML = "";
 
-  candidates.forEach((c,i)=>{
+  tempItems.forEach((code,i)=>{
     el.innerHTML += `
     <div class="item">
-      <input type="checkbox" id="c${i}">${c}
-      <input type="number" id="q${i}" value="1">
+      <input value="${code}" onchange="editTemp(${i},this.value)">
+      数量:<input type="number" value="1" id="tq${i}">
+      <button onclick="removeTemp(${i})">削除</button>
     </div>`;
   });
 }
 
-// ===== 追加 =====
-function addSelected(){
-  candidates.forEach((c,i)=>{
-    if(document.getElementById("c"+i)?.checked){
-      let qty = Number(document.getElementById("q"+i).value);
-      addItem(c, qty);
+// 編集
+function editTemp(i,val){
+  tempItems[i] = val;
+}
+
+// 削除
+function removeTemp(i){
+  tempItems.splice(i,1);
+  renderTemp();
+}
+
+// ===== 注文へ追加 =====
+function addAllToOrder(){
+  tempItems.forEach((code,i)=>{
+    let qty = Number(document.getElementById("tq"+i).value);
+
+    let exist = orderItems.find(x=>x.code===code);
+    if(exist){
+      exist.qty += qty;
+    }else{
+      orderItems.push({code,qty});
     }
   });
-  renderList();
+
+  tempItems = [];
+  renderTemp();
+  renderOrder();
 }
 
-function addItem(code, qty){
-  let exist = items.find(x=>x.code===code);
-  if(exist){ exist.qty += qty; }
-  else{ items.push({code, qty}); }
-}
-
-// ===== リスト =====
-function renderList(){
-  const el = document.getElementById("list");
+// ===== 注文リスト =====
+function renderOrder(){
+  const el = document.getElementById("orderList");
   el.innerHTML = "";
 
-  items.forEach((i,index)=>{
+  orderItems.forEach((i,index)=>{
     el.innerHTML += `
     <div class="item">
       <b>${i.code}</b>
-      <input type="number" value="${i.qty}"
-      onchange="items[${index}].qty=this.value">
+      数量:<input type="number" value="${i.qty}"
+      onchange="orderItems[${index}].qty=this.value">
+      <button onclick="removeOrder(${index})">削除</button>
     </div>`;
   });
 }
 
-// ===== GPS → 住所 =====
-function getLocation(){
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    let lat = pos.coords.latitude;
-    let lon = pos.coords.longitude;
-
-    const input = document.getElementById("siteAddress");
-    input.value = "取得中...";
-
-    try{
-      let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-      let data = await res.json();
-      let a = data.address || {};
-
-      let addr = "";
-
-      if(a.city) addr += a.city;
-      else if(a.town) addr += a.town;
-
-      if(a.suburb) addr += a.suburb;
-      if(a.road) addr += a.road;
-      if(a.house_number) addr += a.house_number;
-
-      if(!addr){
-        addr = data.display_name || "";
-      }
-
-      input.value = addr;
-
-    }catch{
-      input.value = `${lat.toFixed(5)},${lon.toFixed(5)}`;
-    }
-  },()=>{
-    alert("GPS失敗");
-  });
+// 削除
+function removeOrder(i){
+  orderItems.splice(i,1);
+  renderOrder();
 }
 </script>
 
