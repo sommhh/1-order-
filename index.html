@@ -7,30 +7,26 @@
 
 <style>
 body{font-family:sans-serif;padding:10px;}
-button{font-size:16px;padding:8px;margin:4px;}
-input{font-size:16px;padding:8px;width:90%;}
-li{font-size:16px;margin:4px 0;}
+input,textarea{font-size:14px;padding:6px;margin:3px;width:95%;}
+button{font-size:14px;padding:6px;margin:3px;}
+table{border-collapse:collapse;width:100%;}
+th,td{border:1px solid #000;padding:4px;text-align:center;}
 
 #toast{
-  visibility:hidden;
-  min-width:200px;
-  background:#333;
-  color:#fff;
-  text-align:center;
-  border-radius:8px;
-  padding:10px;
-  position:fixed;
-  bottom:30px;
-  left:50%;
-  transform:translateX(-50%);
-  z-index:999;
+ visibility:hidden;
+ background:#333;color:#fff;
+ position:fixed;bottom:20px;left:50%;
+ transform:translateX(-50%);
+ padding:8px;border-radius:6px;
 }
-#toast.show{
-  visibility:visible;
-  animation:fadein 0.3s, fadeout 0.3s 1.5s;
+#toast.show{visibility:visible;}
+
+.no-print{}
+
+@media print{
+ button,input,textarea,.no-print{display:none;}
+ body{font-size:12px;}
 }
-@keyframes fadein{from{opacity:0}to{opacity:1}}
-@keyframes fadeout{from{opacity:1}to{opacity:0}}
 </style>
 </head>
 
@@ -38,162 +34,212 @@ li{font-size:16px;margin:4px 0;}
 
 <h3 id="genba">現場取得中...</h3>
 
-<input id="code" placeholder="品番入力">
+<input id="company" placeholder="会社名">
+<input id="person" placeholder="担当者名">
 
-<div>
+<hr>
+
+<input id="code" placeholder="品番">
+
 <button onclick="minus()">−</button>
 <span id="qty">1</span>
 <button onclick="plus()">＋</button>
-</div>
 
 <button onclick="addItem()">追加</button>
 
-<ul id="list"></ul>
+<h3>注文リスト</h3>
+<table>
+<thead>
+<tr><th>No</th><th>品番</th><th>数量</th><th class="no-print">操作</th></tr>
+</thead>
+<tbody id="list"></tbody>
+</table>
 
 <hr>
 
 <button onclick="copyText()">コピー</button>
-<button onclick="downloadCSV()">CSV出力</button>
+<button onclick="downloadCSV()">CSV</button>
+<button onclick="window.print()">印刷</button>
 <button onclick="saveHistory()">履歴保存</button>
 
-<h4>履歴</h4>
+<hr>
+
+<h3>定型文</h3>
+<div id="templates"></div>
+
+<hr>
+
+<h3>履歴</h3>
 <ul id="history"></ul>
 
 <div id="toast"></div>
 
 <script>
-let qty = 1;
+let qty=1;
+
+// 初期ロード
+window.onload=()=>{
+ loadHistory();
+ loadTemplates();
+ document.getElementById("company").value=localStorage.getItem("company")||"";
+ document.getElementById("person").value=localStorage.getItem("person")||"";
+};
+
+// 保存
+document.getElementById("company").oninput=e=>localStorage.setItem("company",e.target.value);
+document.getElementById("person").oninput=e=>localStorage.setItem("person",e.target.value);
 
 // 数量
-function plus(){ qty++; updateQty(); }
-function minus(){ qty--; if(qty<1) qty=1; updateQty(); }
-function updateQty(){ document.getElementById("qty").innerText = qty; }
+function plus(){qty++;updateQty();}
+function minus(){qty--;if(qty<1)qty=1;updateQty();}
+function updateQty(){document.getElementById("qty").innerText=qty;}
 
 // 追加
 function addItem(){
-  const code = document.getElementById("code").value;
-  if(!code) return;
+ const code=document.getElementById("code").value;
+ if(!code)return;
 
-  const li = document.createElement("li");
-  li.textContent = code + " × " + qty + " ";
+ const tbody=document.getElementById("list");
+ const tr=document.createElement("tr");
+ const no=tbody.children.length+1;
 
-  const del = document.createElement("button");
-  del.textContent = "削除";
-  del.onclick = ()=> li.remove();
+ tr.innerHTML=`
+  <td>${no}</td>
+  <td>${code}</td>
+  <td>${qty}</td>
+  <td class="no-print"><button onclick="this.closest('tr').remove();renumber()">削除</button></td>
+ `;
+ tbody.appendChild(tr);
 
-  li.appendChild(del);
-  document.getElementById("list").appendChild(li);
-
-  document.getElementById("code").value="";
-  qty=1;
-  updateQty();
+ document.getElementById("code").value="";
+ qty=1;updateQty();
 }
 
-// テキスト生成
+// 番号
+function renumber(){
+ document.querySelectorAll("#list tr").forEach((tr,i)=>{
+  tr.children[0].innerText=i+1;
+ });
+}
+
+// テキスト
 function makeText(){
-  const genba = document.getElementById("genba").innerText;
-  const items = document.querySelectorAll("#list li");
+ const genba=document.getElementById("genba").innerText;
+ const company=document.getElementById("company").value;
+ const person=document.getElementById("person").value;
+ const rows=document.querySelectorAll("#list tr");
 
-  let text = "【現場】\n" + genba + "\n\n【注文】\n";
+ let text=`【現場】\n${genba}\n`;
+ text+=`【会社】${company}\n【担当】${person}\n\n【注文】\n`;
 
-  items.forEach((li,i)=>{
-    text += (i+1)+". "+li.childNodes[0].nodeValue.trim()+"\n";
-  });
+ rows.forEach((tr,i)=>{
+  text+=`${i+1}. ${tr.children[1].innerText} × ${tr.children[2].innerText}\n`;
+ });
 
-  return text;
+ return text;
 }
 
 // コピー
 function copyText(){
-  navigator.clipboard.writeText(makeText()).then(()=>{
-    showToast("コピー完了");
-  });
+ navigator.clipboard.writeText(makeText());
+ showToast("コピー完了");
+}
+
+// CSV
+function downloadCSV(){
+ const rows=document.querySelectorAll("#list tr");
+ let csv="No,品番,数量\n";
+ rows.forEach((tr,i)=>{
+  csv+=`${i+1},${tr.children[1].innerText},${tr.children[2].innerText}\n`;
+ });
+ const blob=new Blob([csv]);
+ const a=document.createElement("a");
+ a.href=URL.createObjectURL(blob);
+ a.download="order.csv";
+ a.click();
+}
+
+// 履歴
+function saveHistory(){
+ let data=JSON.parse(localStorage.getItem("history")||"[]");
+ data.unshift(makeText());
+ localStorage.setItem("history",JSON.stringify(data));
+ loadHistory();
+ showToast("保存");
+}
+
+function loadHistory(){
+ const list=document.getElementById("history");
+ list.innerHTML="";
+ let data=JSON.parse(localStorage.getItem("history")||"[]");
+
+ data.forEach(item=>{
+  const li=document.createElement("li");
+  li.textContent=item.split("\n")[0];
+
+  const btn=document.createElement("button");
+  btn.textContent="コピー";
+  btn.onclick=()=>navigator.clipboard.writeText(item);
+
+  li.appendChild(btn);
+  list.appendChild(li);
+ });
+}
+
+// 定型文（10個）
+function loadTemplates(){
+ const box=document.getElementById("templates");
+ box.innerHTML="";
+
+ let data=JSON.parse(localStorage.getItem("templates")||"[]");
+
+ for(let i=0;i<10;i++){
+  const val=data[i]||"";
+
+  const div=document.createElement("div");
+
+  const input=document.createElement("input");
+  input.value=val;
+  input.placeholder="定型文"+(i+1);
+
+  input.oninput=()=>{
+   data[i]=input.value;
+   localStorage.setItem("templates",JSON.stringify(data));
+  };
+
+  const btn=document.createElement("button");
+  btn.textContent="追加";
+  btn.onclick=()=>{
+   document.getElementById("code").value=input.value;
+  };
+
+  div.appendChild(input);
+  div.appendChild(btn);
+
+  box.appendChild(div);
+ }
 }
 
 // トースト
 function showToast(msg){
-  const t=document.getElementById("toast");
-  t.innerText=msg;
-  t.className="show";
-  setTimeout(()=>t.className="",1800);
-}
-
-// CSV出力
-function downloadCSV(){
-  const genba = document.getElementById("genba").innerText;
-  const items = document.querySelectorAll("#list li");
-
-  let csv = "現場," + genba + "\n品番,数量\n";
-
-  items.forEach(li=>{
-    const txt = li.childNodes[0].nodeValue.trim();
-    const parts = txt.split("×");
-    csv += parts[0].trim()+","+parts[1].trim()+"\n";
-  });
-
-  const blob = new Blob([csv], {type:"text/csv"});
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = "order.csv";
-  link.click();
-}
-
-// 履歴保存
-function saveHistory(){
-  const text = makeText();
-
-  let data = JSON.parse(localStorage.getItem("history") || "[]");
-  data.unshift(text);
-  localStorage.setItem("history", JSON.stringify(data));
-
-  showToast("履歴保存");
-  loadHistory();
-}
-
-// 履歴表示
-function loadHistory(){
-  const list = document.getElementById("history");
-  list.innerHTML="";
-
-  let data = JSON.parse(localStorage.getItem("history") || "[]");
-
-  data.forEach((item,i)=>{
-    const li = document.createElement("li");
-
-    const btn = document.createElement("button");
-    btn.textContent = "コピー";
-    btn.onclick = ()=>{
-      navigator.clipboard.writeText(item);
-      showToast("コピー");
-    };
-
-    li.textContent = item.split("\n")[0]; // 現場だけ表示
-    li.appendChild(btn);
-
-    list.appendChild(li);
-  });
+ const t=document.getElementById("toast");
+ t.innerText=msg;
+ t.className="show";
+ setTimeout(()=>t.className="",1500);
 }
 
 // GPS
-navigator.geolocation.getCurrentPosition(async (pos)=>{
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-
-  try{
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    const data = await res.json();
-
-    let address = data.display_name;
-    address = address.replace(/〒\d{3}-\d{4}/, "");
-
-    document.getElementById("genba").innerText = address;
-  }catch{
-    document.getElementById("genba").innerText = "取得失敗";
-  }
+navigator.geolocation.getCurrentPosition(async pos=>{
+ const lat=pos.coords.latitude;
+ const lon=pos.coords.longitude;
+ try{
+  const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  const data=await res.json();
+  document.getElementById("genba").innerText=data.display_name;
+ }catch{
+  document.getElementById("genba").innerText="取得失敗";
+ }
 });
-
-// 初期化
-loadHistory();
 </script>
 
 </body>
