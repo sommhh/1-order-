@@ -7,8 +7,8 @@
 
 <style>
 body{font-family:sans-serif;padding:10px;}
-input,textarea{font-size:14px;padding:6px;margin:3px;width:95%;}
-button{font-size:14px;padding:6px;margin:3px;}
+input,textarea{font-size:16px;padding:8px;margin:4px;width:95%;}
+button{font-size:16px;padding:8px;margin:4px;}
 table{border-collapse:collapse;width:100%;}
 th,td{border:1px solid #000;padding:4px;text-align:center;}
 
@@ -17,11 +17,10 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
  background:#333;color:#fff;
  position:fixed;bottom:20px;left:50%;
  transform:translateX(-50%);
- padding:8px;border-radius:6px;
+ padding:10px;border-radius:6px;
+ z-index:999;
 }
 #toast.show{visibility:visible;}
-
-.no-print{}
 
 @media print{
  button,input,textarea,.no-print{display:none;}
@@ -39,7 +38,7 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
 
 <hr>
 
-<input id="code" placeholder="品番">
+<input id="code" placeholder="品番入力">
 
 <button onclick="minus()">−</button>
 <span id="qty">1</span>
@@ -64,7 +63,7 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
 
 <hr>
 
-<h3>定型文</h3>
+<h3>定型文（10個）</h3>
 <div id="templates"></div>
 
 <hr>
@@ -77,7 +76,16 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
 <script>
 let qty=1;
 
-// 初期ロード
+// 安全ストレージ
+function getStorage(key){
+ try{return JSON.parse(localStorage.getItem(key)||"[]");}
+ catch{return [];}
+}
+function setStorage(key,val){
+ localStorage.setItem(key,JSON.stringify(val));
+}
+
+// 初期化
 window.onload=()=>{
  loadHistory();
  loadTemplates();
@@ -85,7 +93,7 @@ window.onload=()=>{
  document.getElementById("person").value=localStorage.getItem("person")||"";
 };
 
-// 保存
+// 入力保存
 document.getElementById("company").oninput=e=>localStorage.setItem("company",e.target.value);
 document.getElementById("person").oninput=e=>localStorage.setItem("person",e.target.value);
 
@@ -115,14 +123,14 @@ function addItem(){
  qty=1;updateQty();
 }
 
-// 番号
+// 番号振り直し
 function renumber(){
  document.querySelectorAll("#list tr").forEach((tr,i)=>{
   tr.children[0].innerText=i+1;
  });
 }
 
-// テキスト
+// テキスト生成
 function makeText(){
  const genba=document.getElementById("genba").innerText;
  const company=document.getElementById("company").value;
@@ -139,10 +147,21 @@ function makeText(){
  return text;
 }
 
-// コピー
+// コピー（完全対応）
 function copyText(){
- navigator.clipboard.writeText(makeText());
- showToast("コピー完了");
+ const text=makeText();
+
+ if(navigator.clipboard){
+  navigator.clipboard.writeText(text).then(()=>showToast("コピー完了"));
+ }else{
+  const ta=document.createElement("textarea");
+  ta.value=text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+  showToast("コピー完了");
+ }
 }
 
 // CSV
@@ -152,7 +171,8 @@ function downloadCSV(){
  rows.forEach((tr,i)=>{
   csv+=`${i+1},${tr.children[1].innerText},${tr.children[2].innerText}\n`;
  });
- const blob=new Blob([csv]);
+
+ const blob=new Blob([csv],{type:"text/csv"});
  const a=document.createElement("a");
  a.href=URL.createObjectURL(blob);
  a.download="order.csv";
@@ -161,9 +181,9 @@ function downloadCSV(){
 
 // 履歴
 function saveHistory(){
- let data=JSON.parse(localStorage.getItem("history")||"[]");
+ let data=getStorage("history");
  data.unshift(makeText());
- localStorage.setItem("history",JSON.stringify(data));
+ setStorage("history",data);
  loadHistory();
  showToast("保存");
 }
@@ -171,7 +191,7 @@ function saveHistory(){
 function loadHistory(){
  const list=document.getElementById("history");
  list.innerHTML="";
- let data=JSON.parse(localStorage.getItem("history")||"[]");
+ let data=getStorage("history");
 
  data.forEach(item=>{
   const li=document.createElement("li");
@@ -179,43 +199,54 @@ function loadHistory(){
 
   const btn=document.createElement("button");
   btn.textContent="コピー";
-  btn.onclick=()=>navigator.clipboard.writeText(item);
+  btn.onclick=()=>copyDirect(item);
 
   li.appendChild(btn);
   list.appendChild(li);
  });
 }
 
-// 定型文（10個）
+// 直接コピー
+function copyDirect(text){
+ if(navigator.clipboard){
+  navigator.clipboard.writeText(text);
+ }else{
+  const ta=document.createElement("textarea");
+  ta.value=text;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+ }
+ showToast("コピー");
+}
+
+// 定型文
 function loadTemplates(){
  const box=document.getElementById("templates");
  box.innerHTML="";
-
- let data=JSON.parse(localStorage.getItem("templates")||"[]");
+ let data=getStorage("templates");
 
  for(let i=0;i<10;i++){
-  const val=data[i]||"";
-
   const div=document.createElement("div");
 
   const input=document.createElement("input");
-  input.value=val;
+  input.value=data[i]||"";
   input.placeholder="定型文"+(i+1);
 
   input.oninput=()=>{
    data[i]=input.value;
-   localStorage.setItem("templates",JSON.stringify(data));
+   setStorage("templates",data);
   };
 
   const btn=document.createElement("button");
-  btn.textContent="追加";
+  btn.textContent="入力";
   btn.onclick=()=>{
    document.getElementById("code").value=input.value;
   };
 
   div.appendChild(input);
   div.appendChild(btn);
-
   box.appendChild(div);
  }
 }
@@ -228,17 +259,28 @@ function showToast(msg){
  setTimeout(()=>t.className="",1500);
 }
 
-// GPS
+// GPS（強化版）
 navigator.geolocation.getCurrentPosition(async pos=>{
  const lat=pos.coords.latitude;
  const lon=pos.coords.longitude;
+
  try{
   const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
   const data=await res.json();
-  document.getElementById("genba").innerText=data.display_name;
+
+  let addr=data.display_name||"住所不明";
+  addr=addr.replace("日本、","");
+
+  document.getElementById("genba").innerText=addr;
+
  }catch{
-  document.getElementById("genba").innerText="取得失敗";
+  document.getElementById("genba").innerText="住所取得失敗";
  }
+
+},{
+ enableHighAccuracy:true,
+ timeout:10000,
+ maximumAge:0
 });
 </script>
 
