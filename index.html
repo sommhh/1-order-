@@ -8,6 +8,8 @@
 <style>
 body{font-family:sans-serif;padding:10px;}
 input,button,select{font-size:16px;padding:8px;margin:4px;}
+.row{display:flex;align-items:center;}
+label{width:60px;}
 table{width:100%;border-collapse:collapse;}
 td,th{border:1px solid #000;padding:5px;text-align:center;}
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px;border-radius:6px;display:none;}
@@ -19,20 +21,22 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <h3 id="genba">現場未取得</h3>
 <button onclick="getAddress()">📍住所取得</button>
 
-<!-- 会社 -->
+<!-- 会社・担当 -->
+<div class="row">
+<label>会社</label>
 <select id="companySelect" onchange="changeCompany()"></select>
-<button onclick="addCompany()">会社＋</button>
+<button onclick="addCompany()">＋</button>
+</div>
 
-<!-- 担当 -->
+<div class="row">
+<label>担当</label>
 <select id="personSelect"></select>
-<button onclick="addPerson()">担当＋</button>
+<button onclick="addPerson()">＋</button>
+</div>
 
 <hr>
 
 <input id="code" placeholder="品番">
-
-<button onclick="scan()">📷</button>
-<input type="file" id="camera" accept="image/*" capture="environment" style="display:none">
 
 <button onclick="openGallery()">🖼</button>
 <input type="file" id="gallery" accept="image/*" style="display:none">
@@ -54,6 +58,8 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <hr>
 
 <button onclick="copyText()">コピー</button>
+<button onclick="sendLine()">LINE</button>
+<button onclick="sendMail()">メール</button>
 <button onclick="window.print()">印刷</button>
 
 <div id="toast"></div>
@@ -61,12 +67,12 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <script>
 let qty=1;
 
-// ===== 数量 =====
+// 数量
 function plus(){qty++;update()}
 function minus(){qty--;if(qty<1)qty=1;update()}
 function update(){document.getElementById("qty").innerText=qty}
 
-// ===== 追加 =====
+// 追加
 function addItem(){
  const code=document.getElementById("code").value;
  if(!code)return;
@@ -93,10 +99,9 @@ function renum(){
  });
 }
 
-// ===== コピー =====
-function copyText(){
+// テキスト
+function makeText(){
  let text="";
-
  text+="【現場】"+document.getElementById("genba").innerText+"\n";
  text+="【会社】"+document.getElementById("companySelect").value+"\n";
  text+="【担当】"+document.getElementById("personSelect").value+"\n\n";
@@ -105,11 +110,28 @@ function copyText(){
   text+=(i+1)+". "+tr.children[1].innerText+" × "+tr.children[2].innerText+"\n";
  });
 
- navigator.clipboard.writeText(text);
+ return text;
+}
+
+// コピー
+function copyText(){
+ navigator.clipboard.writeText(makeText());
  toast("コピー完了");
 }
 
-// ===== トースト =====
+// LINE
+function sendLine(){
+ const url="https://line.me/R/msg/text/?"+encodeURIComponent(makeText());
+ window.open(url);
+}
+
+// メール
+function sendMail(){
+ const body=encodeURIComponent(makeText());
+ location.href=`mailto:?subject=現場注文&body=${body}`;
+}
+
+// トースト
 function toast(msg){
  const t=document.getElementById("toast");
  t.innerText=msg;
@@ -117,7 +139,7 @@ function toast(msg){
  setTimeout(()=>t.style.display="none",1500);
 }
 
-// ===== 住所 =====
+// 住所
 function getAddress(){
  navigator.geolocation.getCurrentPosition(async pos=>{
   const lat=pos.coords.latitude;
@@ -130,36 +152,28 @@ function getAddress(){
  });
 }
 
-// ===== カメラ =====
-function scan(){
- document.getElementById("camera").click();
-}
-
-// ===== 写真フォルダ =====
+// 写真
 function openGallery(){
  document.getElementById("gallery").click();
 }
 
-// ===== 会社＆担当連動 =====
+// 会社＋担当連動
 let companies=JSON.parse(localStorage.getItem("companies")||"{}");
 
 function loadCompanies(){
  const select=document.getElementById("companySelect");
  select.innerHTML="";
-
  Object.keys(companies).forEach(c=>{
   const opt=document.createElement("option");
   opt.textContent=c;
   select.appendChild(opt);
  });
-
  changeCompany();
 }
 
 function addCompany(){
  const name=prompt("会社名");
  if(!name)return;
-
  companies[name]=[];
  localStorage.setItem("companies",JSON.stringify(companies));
  loadCompanies();
@@ -171,7 +185,6 @@ function changeCompany(){
 
  const select=document.getElementById("personSelect");
  select.innerHTML="";
-
  persons.forEach(p=>{
   const opt=document.createElement("option");
   opt.textContent=p;
@@ -182,7 +195,6 @@ function changeCompany(){
 function addPerson(){
  const company=document.getElementById("companySelect").value;
  const name=prompt("担当者");
-
  if(!name)return;
 
  if(!companies[company])companies[company]=[];
