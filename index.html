@@ -1,1 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>現場注文アプリ</title>
 
+<style>
+body{font-family:sans-serif;padding:10px;}
+button{font-size:16px;padding:8px;margin:4px;}
+input{font-size:16px;padding:8px;width:90%;}
+li{font-size:16px;margin:4px 0;}
+
+#toast{
+  visibility:hidden;
+  min-width:200px;
+  background:#333;
+  color:#fff;
+  text-align:center;
+  border-radius:8px;
+  padding:10px;
+  position:fixed;
+  bottom:30px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:999;
+}
+#toast.show{
+  visibility:visible;
+  animation:fadein 0.3s, fadeout 0.3s 1.5s;
+}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes fadeout{from{opacity:1}to{opacity:0}}
+</style>
+</head>
+
+<body>
+
+<h3 id="genba">現場取得中...</h3>
+
+<input id="code" placeholder="品番入力">
+
+<div>
+<button onclick="minus()">−</button>
+<span id="qty">1</span>
+<button onclick="plus()">＋</button>
+</div>
+
+<button onclick="addItem()">追加</button>
+
+<ul id="list"></ul>
+
+<hr>
+
+<button onclick="copyText()">コピー</button>
+<button onclick="downloadCSV()">CSV出力</button>
+<button onclick="saveHistory()">履歴保存</button>
+
+<h4>履歴</h4>
+<ul id="history"></ul>
+
+<div id="toast"></div>
+
+<script>
+let qty = 1;
+
+// 数量
+function plus(){ qty++; updateQty(); }
+function minus(){ qty--; if(qty<1) qty=1; updateQty(); }
+function updateQty(){ document.getElementById("qty").innerText = qty; }
+
+// 追加
+function addItem(){
+  const code = document.getElementById("code").value;
+  if(!code) return;
+
+  const li = document.createElement("li");
+  li.textContent = code + " × " + qty + " ";
+
+  const del = document.createElement("button");
+  del.textContent = "削除";
+  del.onclick = ()=> li.remove();
+
+  li.appendChild(del);
+  document.getElementById("list").appendChild(li);
+
+  document.getElementById("code").value="";
+  qty=1;
+  updateQty();
+}
+
+// テキスト生成
+function makeText(){
+  const genba = document.getElementById("genba").innerText;
+  const items = document.querySelectorAll("#list li");
+
+  let text = "【現場】\n" + genba + "\n\n【注文】\n";
+
+  items.forEach((li,i)=>{
+    text += (i+1)+". "+li.childNodes[0].nodeValue.trim()+"\n";
+  });
+
+  return text;
+}
+
+// コピー
+function copyText(){
+  navigator.clipboard.writeText(makeText()).then(()=>{
+    showToast("コピー完了");
+  });
+}
+
+// トースト
+function showToast(msg){
+  const t=document.getElementById("toast");
+  t.innerText=msg;
+  t.className="show";
+  setTimeout(()=>t.className="",1800);
+}
+
+// CSV出力
+function downloadCSV(){
+  const genba = document.getElementById("genba").innerText;
+  const items = document.querySelectorAll("#list li");
+
+  let csv = "現場," + genba + "\n品番,数量\n";
+
+  items.forEach(li=>{
+    const txt = li.childNodes[0].nodeValue.trim();
+    const parts = txt.split("×");
+    csv += parts[0].trim()+","+parts[1].trim()+"\n";
+  });
+
+  const blob = new Blob([csv], {type:"text/csv"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "order.csv";
+  link.click();
+}
+
+// 履歴保存
+function saveHistory(){
+  const text = makeText();
+
+  let data = JSON.parse(localStorage.getItem("history") || "[]");
+  data.unshift(text);
+  localStorage.setItem("history", JSON.stringify(data));
+
+  showToast("履歴保存");
+  loadHistory();
+}
+
+// 履歴表示
+function loadHistory(){
+  const list = document.getElementById("history");
+  list.innerHTML="";
+
+  let data = JSON.parse(localStorage.getItem("history") || "[]");
+
+  data.forEach((item,i)=>{
+    const li = document.createElement("li");
+
+    const btn = document.createElement("button");
+    btn.textContent = "コピー";
+    btn.onclick = ()=>{
+      navigator.clipboard.writeText(item);
+      showToast("コピー");
+    };
+
+    li.textContent = item.split("\n")[0]; // 現場だけ表示
+    li.appendChild(btn);
+
+    list.appendChild(li);
+  });
+}
+
+// GPS
+navigator.geolocation.getCurrentPosition(async (pos)=>{
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    const data = await res.json();
+
+    let address = data.display_name;
+    address = address.replace(/〒\d{3}-\d{4}/, "");
+
+    document.getElementById("genba").innerText = address;
+  }catch{
+    document.getElementById("genba").innerText = "取得失敗";
+  }
+});
+
+// 初期化
+loadHistory();
+</script>
+
+</body>
+</html>
