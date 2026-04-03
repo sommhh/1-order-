@@ -3,37 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文 完全版</title>
+<title>現場注文 最強版</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
 body{font-family:sans-serif;padding:10px;}
-input,button,select{font-size:14px;padding:6px;margin:3px;}
+input,button{font-size:14px;padding:6px;margin:3px;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 td,th{border:1px solid #000;padding:4px;text-align:center;}
 td[contenteditable]{background:#eef;}
 .qty{min-width:30px;display:inline-block;}
-textarea{width:100%;height:50px;}
+#suggest div{padding:5px;border-bottom:1px solid #ccc;cursor:pointer;}
+#suggest{background:#fff;border:1px solid #000;}
+.quick button{margin:2px;font-size:12px;}
 </style>
 </head>
 
 <body>
 
 <h3 id="genba">現場未取得</h3>
-<button onclick="getAddress()">📍住所取得</button>
+<button onclick="getAddress()">📍住所</button>
 
-<textarea id="comment" placeholder="例：〇日までにお願いします"></textarea>
+<hr>
 
-<button onclick="saveData()">💾保存</button>
-<button onclick="loadData()">📂呼び出し</button>
+<input id="search" placeholder="商品名検索">
+<div id="suggest"></div>
+
+<div class="quick" id="quick"></div>
 
 <hr>
 
 <input id="code" placeholder="貼る or OCR">
 <button onclick="ocrScan()">📷</button>
 <input type="file" id="ocr" accept="image/*" style="display:none">
-
 <button onclick="addItem()">追加</button>
 
 <table>
@@ -43,43 +46,82 @@ textarea{width:100%;height:50px;}
 <tbody id="list"></tbody>
 </table>
 
-<hr>
-
-<button onclick="copyText()">コピー</button>
-
 <script>
-const list = document.getElementById("list");
-const codeInput = document.getElementById("code");
+const list=document.getElementById("list");
+const suggest=document.getElementById("suggest");
+const quick=document.getElementById("quick");
 
-// ===== データ安全取得 =====
-let master = {};
+let master={},count={};
+
 try{
- master = JSON.parse(localStorage.getItem("master")||"{}");
-}catch{
- master = {};
+ master=JSON.parse(localStorage.getItem("master")||"{}");
+ count=JSON.parse(localStorage.getItem("count")||"{}");
+}catch{}
+
+// ===== 検索 =====
+search.oninput=function(){
+ let val=this.value.toLowerCase();
+ suggest.innerHTML="";
+ if(!val)return;
+
+ let arr=Object.entries(master)
+  .filter(([c,n])=>n.toLowerCase().includes(val))
+  .sort((a,b)=>(count[b[0]]||0)-(count[a[0]]||0));
+
+ arr.slice(0,10).forEach(([c,n])=>{
+  let d=document.createElement("div");
+  d.textContent=c+" "+n;
+  d.onclick=()=>addOrUpdate(c,n,1);
+  suggest.appendChild(d);
+ });
+}
+
+// ===== よく使う =====
+function renderQuick(){
+ quick.innerHTML="";
+ let arr=Object.entries(count)
+  .sort((a,b)=>b[1]-a[1])
+  .slice(0,8);
+
+ arr.forEach(([c])=>{
+  let b=document.createElement("button");
+  b.textContent=c;
+  b.onclick=()=>addOrUpdate(c,master[c]||"",1);
+  quick.appendChild(b);
+ });
 }
 
 // ===== 追加 =====
 function addItem(){
- processText(codeInput.value);
- codeInput.value="";
+ processText(code.value);
+ code.value="";
 }
+
+// ===== OCR =====
+function ocrScan(){
+ document.getElementById("ocr").click();
+}
+ocr.onchange=async e=>{
+ try{
+  let f=e.target.files[0];
+  let r=await Tesseract.recognize(f,'eng');
+  processText(r.data.text);
+ }catch{}
+};
 
 // ===== 処理 =====
 function processText(text){
  if(!text)return;
 
  text.split(/\n/).forEach(line=>{
-  let t=line.trim().toUpperCase();
-  t=t.replace(/[^A-Z0-9\/\-]/g,"");
+  let t=line.trim().toUpperCase().replace(/[^A-Z0-9\/\-]/g,"");
+  if(t.length<4)return;
 
-  if(!t || t.length<4)return;
-
-  addOrUpdate(t, master[t]||"", 1);
+  addOrUpdate(t,master[t]||"",1);
  });
 }
 
-// ===== 行追加 =====
+// ===== 行 =====
 function addOrUpdate(code,name,qty){
  for(let tr of list.children){
   if(tr.children[1].innerText===code){
@@ -103,30 +145,27 @@ function addOrUpdate(code,name,qty){
  <td><button onclick="this.closest('tr').remove();renum()">×</button></td>
  `;
 
- // 行タップ＋
- tr.addEventListener("click",e=>{
+ tr.onclick=e=>{
   if(e.target.tagName==="BUTTON")return;
   let span=tr.querySelector(".qty");
   span.innerText=parseInt(span.innerText)+1;
- });
+ }
 
  list.appendChild(tr);
+
+ count[code]=(count[code]||0)+1;
+ localStorage.setItem("count",JSON.stringify(count));
+ renderQuick();
 }
 
-// ===== 商品名保存（強化版）=====
+// ===== 商品名保存 =====
 function saveName(td){
- try{
-  const code = td.parentElement.children[1].innerText.trim();
-  const name = td.innerText.trim();
+ let code=td.parentElement.children[1].innerText;
+ let name=td.innerText.trim();
+ if(!name)return;
 
-  if(!code || !name) return;
-
-  // 上書きOK
-  master[code] = name;
-
-  localStorage.setItem("master",JSON.stringify(master));
-
- }catch{}
+ master[code]=name;
+ localStorage.setItem("master",JSON.stringify(master));
 }
 
 // ===== 数量 =====
@@ -144,67 +183,15 @@ function fixQty(el){
  el.innerText=n;
 }
 
-// ===== 保存 =====
-function saveData(){
- let data={rows:[]};
-
- document.querySelectorAll("#list tr").forEach(tr=>{
-  data.rows.push([
-   tr.children[1].innerText,
-   tr.children[2].innerText,
-   tr.querySelector(".qty").innerText
-  ]);
- });
-
- localStorage.setItem("save_data",JSON.stringify(data));
- alert("保存OK");
-}
-
-// ===== 読込 =====
-function loadData(){
- let data=JSON.parse(localStorage.getItem("save_data")||"null");
- if(!data)return;
-
- list.innerHTML="";
- data.rows.forEach(r=>{
-  addOrUpdate(r[0],r[1],parseInt(r[2]));
- });
-}
-
-// ===== OCR =====
-function ocrScan(){
- document.getElementById("ocr").click();
-}
-
-ocr.onchange=async e=>{
- try{
-  let file=e.target.files[0];
-  if(!file)return;
-
-  let res=await Tesseract.recognize(file,'eng');
-  processText(res.data.text);
- }catch{}
-};
-
-// ===== コピー =====
-function copyText(){
- let text="";
+// ===== 番号 =====
+function renum(){
  document.querySelectorAll("#list tr").forEach((tr,i)=>{
-  text+=(i+1)+". "+tr.children[1].innerText+" "+tr.children[2].innerText+" × "+tr.querySelector(".qty").innerText+"\n";
+  tr.children[0].innerText=i+1;
  });
- navigator.clipboard.writeText(text);
 }
 
-// ===== 住所 =====
-function getAddress(){
- navigator.geolocation.getCurrentPosition(async pos=>{
-  try{
-   let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
-   let data=await res.json();
-   genba.innerText=data.display_name;
-  }catch{}
- });
-}
+// ===== 初期 =====
+renderQuick();
 </script>
 
 </body>
