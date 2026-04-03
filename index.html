@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文 改良版</title>
+<title>現場注文 最終完成</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
@@ -15,6 +15,7 @@ label{width:60px;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 td,th{border:1px solid #000;padding:3px;text-align:center;}
 td[contenteditable]{background:#eef;}
+.qty{cursor:pointer;background:#ddd;}
 textarea{width:100%;height:50px;margin-top:5px;}
 </style>
 </head>
@@ -36,7 +37,6 @@ textarea{width:100%;height:50px;margin-top:5px;}
 <button onclick="addPerson()">＋</button>
 </div>
 
-<!-- コメント -->
 <textarea id="comment" placeholder="例：〇日までにお願いします"></textarea>
 
 <hr>
@@ -63,6 +63,7 @@ textarea{width:100%;height:50px;margin-top:5px;}
 
 <script>
 const list = document.getElementById("list");
+const codeInput = document.getElementById("code");
 
 // ===== データ =====
 let master=JSON.parse(localStorage.getItem("master")||"{}");
@@ -70,9 +71,11 @@ let companies=JSON.parse(localStorage.getItem("companies")||"{}");
 
 // ===== 追加 =====
 function addItem(){
- const input=document.getElementById("code").value;
+ const input=codeInput.value;
+ if(!input)return;
+
  processText(input);
- code.value="";
+ codeInput.value="";
 }
 
 // ===== 文字処理 =====
@@ -89,7 +92,7 @@ function processText(text){
    addOrUpdate(t,master[t]||"",1);
   });
 
- }catch{}
+ }catch(e){console.log(e);}
 }
 
 // ===== 行追加 =====
@@ -98,8 +101,8 @@ function addOrUpdate(code,name,qty){
 
  for(let tr of rows){
   if(tr.children[1].innerText===code){
-   let q=Number(tr.children[3].innerText)||0;
-   tr.children[3].innerText=q+qty;
+   let td=tr.children[3];
+   td.innerText = Number(td.innerText||0)+qty;
    return;
   }
  }
@@ -110,9 +113,32 @@ function addOrUpdate(code,name,qty){
  <td>${list.children.length+1}</td>
  <td>${code}</td>
  <td contenteditable onblur="saveName(this)">${name}</td>
- <td contenteditable onblur="fixQty(this)">1</td>
+ <td class="qty">${qty}</td>
  <td><button onclick="this.closest('tr').remove();renum()">×</button></td>
  `;
+
+ // 数量タップ処理
+ const qtyTd = tr.querySelector(".qty");
+
+ let pressTimer;
+
+ qtyTd.addEventListener("click",()=>{
+  let n = Number(qtyTd.innerText)||0;
+  qtyTd.innerText = n+1;
+ });
+
+ qtyTd.addEventListener("touchstart",()=>{
+  pressTimer = setTimeout(()=>{
+   let n = Number(qtyTd.innerText)||1;
+   n = n-1;
+   if(n<1)n=1;
+   qtyTd.innerText = n;
+  },500);
+ });
+
+ qtyTd.addEventListener("touchend",()=>{
+  clearTimeout(pressTimer);
+ });
 
  list.appendChild(tr);
 }
@@ -128,13 +154,6 @@ function saveName(td){
    localStorage.setItem("master",JSON.stringify(master));
   }
  }catch{}
-}
-
-// ===== 数量補正 =====
-function fixQty(td){
- let n=parseInt(td.innerText);
- if(isNaN(n)||n<1)n=1;
- td.innerText=n;
 }
 
 // ===== 番号 =====
@@ -162,7 +181,7 @@ document.getElementById("ocr").onchange=async e=>{
 };
 
 // ===== 貼り付け =====
-code.addEventListener("paste",e=>{
+codeInput.addEventListener("paste",e=>{
  try{
   const paste=e.clipboardData.getData("text");
   processText(paste);
@@ -174,8 +193,8 @@ code.addEventListener("paste",e=>{
 function makeText(){
  let text="";
  text+="【現場】"+genba.innerText+"\n";
- text+="【会社】"+companySelect.value+"\n";
- text+="【担当】"+personSelect.value+"\n";
+ text+="【会社】"+(companySelect.value||"")+"\n";
+ text+="【担当】"+(personSelect.value||"")+"\n";
 
  let comment=document.getElementById("comment").value;
  if(comment) text+="【備考】"+comment+"\n";
@@ -191,7 +210,11 @@ function makeText(){
 
 // ===== コピー =====
 function copyText(){
- navigator.clipboard.writeText(makeText());
+ try{
+  navigator.clipboard.writeText(makeText());
+ }catch{
+  alert(makeText());
+ }
 }
 
 // ===== LINE =====
