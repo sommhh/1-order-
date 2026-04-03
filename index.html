@@ -3,42 +3,29 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文アプリ</title>
+<title>現場注文</title>
 
 <style>
 body{font-family:sans-serif;padding:10px;}
-input,textarea{font-size:16px;padding:8px;margin:4px;width:95%;}
-button{font-size:16px;padding:8px;margin:4px;}
-table{border-collapse:collapse;width:100%;}
-th,td{border:1px solid #000;padding:4px;text-align:center;}
-
-#toast{
- visibility:hidden;
- background:#333;color:#fff;
- position:fixed;bottom:20px;left:50%;
- transform:translateX(-50%);
- padding:10px;border-radius:6px;
- z-index:999;
-}
-#toast.show{visibility:visible;}
-
-@media print{
- button,input,textarea,.no-print{display:none;}
- body{font-size:12px;}
-}
+input,button{font-size:16px;padding:8px;margin:4px;}
+table{width:100%;border-collapse:collapse;}
+td,th{border:1px solid #000;padding:5px;text-align:center;}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:8px;border-radius:6px;display:none;}
 </style>
 </head>
 
 <body>
 
-<h3 id="genba">現場取得中...</h3>
+<h3 id="genba">現場未取得</h3>
+<button onclick="getAddress()">📍住所取得</button>
 
 <input id="company" placeholder="会社名">
-<input id="person" placeholder="担当者名">
+<input id="person" placeholder="担当者">
 
 <hr>
 
-<input id="code" placeholder="品番入力">
+<input id="code" placeholder="品番">
+<button onclick="scan()">📷</button>
 
 <button onclick="minus()">−</button>
 <span id="qty">1</span>
@@ -46,10 +33,10 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
 
 <button onclick="addItem()">追加</button>
 
-<h3>注文リスト</h3>
+<h3>リスト</h3>
 <table>
 <thead>
-<tr><th>No</th><th>品番</th><th>数量</th><th class="no-print">操作</th></tr>
+<tr><th>No</th><th>品番</th><th>数量</th><th>削除</th></tr>
 </thead>
 <tbody id="list"></tbody>
 </table>
@@ -57,231 +44,127 @@ th,td{border:1px solid #000;padding:4px;text-align:center;}
 <hr>
 
 <button onclick="copyText()">コピー</button>
-<button onclick="downloadCSV()">CSV</button>
 <button onclick="window.print()">印刷</button>
-<button onclick="saveHistory()">履歴保存</button>
 
 <hr>
 
-<h3>定型文（10個）</h3>
+<h3>定型（タップで入力）</h3>
 <div id="templates"></div>
 
-<hr>
-
-<h3>履歴</h3>
-<ul id="history"></ul>
+<input type="file" id="camera" accept="image/*" capture="environment" style="display:none">
 
 <div id="toast"></div>
 
 <script>
 let qty=1;
 
-// 安全ストレージ
-function getStorage(key){
- try{return JSON.parse(localStorage.getItem(key)||"[]");}
- catch{return [];}
-}
-function setStorage(key,val){
- localStorage.setItem(key,JSON.stringify(val));
-}
-
-// 初期化
-window.onload=()=>{
- loadHistory();
- loadTemplates();
- document.getElementById("company").value=localStorage.getItem("company")||"";
- document.getElementById("person").value=localStorage.getItem("person")||"";
-};
-
-// 入力保存
-document.getElementById("company").oninput=e=>localStorage.setItem("company",e.target.value);
-document.getElementById("person").oninput=e=>localStorage.setItem("person",e.target.value);
-
 // 数量
-function plus(){qty++;updateQty();}
-function minus(){qty--;if(qty<1)qty=1;updateQty();}
-function updateQty(){document.getElementById("qty").innerText=qty;}
+function plus(){qty++;update()}
+function minus(){qty--;if(qty<1)qty=1;update()}
+function update(){document.getElementById("qty").innerText=qty}
 
 // 追加
 function addItem(){
  const code=document.getElementById("code").value;
  if(!code)return;
 
- const tbody=document.getElementById("list");
  const tr=document.createElement("tr");
+ const tbody=document.getElementById("list");
  const no=tbody.children.length+1;
 
  tr.innerHTML=`
-  <td>${no}</td>
-  <td>${code}</td>
-  <td>${qty}</td>
-  <td class="no-print"><button onclick="this.closest('tr').remove();renumber()">削除</button></td>
+ <td>${no}</td>
+ <td>${code}</td>
+ <td>${qty}</td>
+ <td><button onclick="this.closest('tr').remove();renum()">×</button></td>
  `;
- tbody.appendChild(tr);
 
+ tbody.appendChild(tr);
  document.getElementById("code").value="";
- qty=1;updateQty();
+ qty=1;update();
 }
 
 // 番号振り直し
-function renumber(){
+function renum(){
  document.querySelectorAll("#list tr").forEach((tr,i)=>{
   tr.children[0].innerText=i+1;
  });
 }
 
-// テキスト生成
-function makeText(){
- const genba=document.getElementById("genba").innerText;
- const company=document.getElementById("company").value;
- const person=document.getElementById("person").value;
- const rows=document.querySelectorAll("#list tr");
-
- let text=`【現場】\n${genba}\n`;
- text+=`【会社】${company}\n【担当】${person}\n\n【注文】\n`;
-
- rows.forEach((tr,i)=>{
-  text+=`${i+1}. ${tr.children[1].innerText} × ${tr.children[2].innerText}\n`;
- });
-
- return text;
-}
-
-// コピー（完全対応）
+// コピー
 function copyText(){
- const text=makeText();
+ let text="";
 
- if(navigator.clipboard){
-  navigator.clipboard.writeText(text).then(()=>showToast("コピー完了"));
- }else{
-  const ta=document.createElement("textarea");
-  ta.value=text;
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-  showToast("コピー完了");
- }
-}
+ text+="【現場】"+document.getElementById("genba").innerText+"\n";
+ text+="【会社】"+document.getElementById("company").value+"\n";
+ text+="【担当】"+document.getElementById("person").value+"\n\n";
 
-// CSV
-function downloadCSV(){
- const rows=document.querySelectorAll("#list tr");
- let csv="No,品番,数量\n";
- rows.forEach((tr,i)=>{
-  csv+=`${i+1},${tr.children[1].innerText},${tr.children[2].innerText}\n`;
+ document.querySelectorAll("#list tr").forEach((tr,i)=>{
+  text+=(i+1)+". "+tr.children[1].innerText+" × "+tr.children[2].innerText+"\n";
  });
 
- const blob=new Blob([csv],{type:"text/csv"});
- const a=document.createElement("a");
- a.href=URL.createObjectURL(blob);
- a.download="order.csv";
- a.click();
-}
-
-// 履歴
-function saveHistory(){
- let data=getStorage("history");
- data.unshift(makeText());
- setStorage("history",data);
- loadHistory();
- showToast("保存");
-}
-
-function loadHistory(){
- const list=document.getElementById("history");
- list.innerHTML="";
- let data=getStorage("history");
-
- data.forEach(item=>{
-  const li=document.createElement("li");
-  li.textContent=item.split("\n")[0];
-
-  const btn=document.createElement("button");
-  btn.textContent="コピー";
-  btn.onclick=()=>copyDirect(item);
-
-  li.appendChild(btn);
-  list.appendChild(li);
- });
-}
-
-// 直接コピー
-function copyDirect(text){
- if(navigator.clipboard){
-  navigator.clipboard.writeText(text);
- }else{
-  const ta=document.createElement("textarea");
-  ta.value=text;
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
- }
- showToast("コピー");
-}
-
-// 定型文
-function loadTemplates(){
- const box=document.getElementById("templates");
- box.innerHTML="";
- let data=getStorage("templates");
-
- for(let i=0;i<10;i++){
-  const div=document.createElement("div");
-
-  const input=document.createElement("input");
-  input.value=data[i]||"";
-  input.placeholder="定型文"+(i+1);
-
-  input.oninput=()=>{
-   data[i]=input.value;
-   setStorage("templates",data);
-  };
-
-  const btn=document.createElement("button");
-  btn.textContent="入力";
-  btn.onclick=()=>{
-   document.getElementById("code").value=input.value;
-  };
-
-  div.appendChild(input);
-  div.appendChild(btn);
-  box.appendChild(div);
- }
+ navigator.clipboard.writeText(text);
+ toast("コピー完了");
 }
 
 // トースト
-function showToast(msg){
+function toast(msg){
  const t=document.getElementById("toast");
  t.innerText=msg;
- t.className="show";
- setTimeout(()=>t.className="",1500);
+ t.style.display="block";
+ setTimeout(()=>t.style.display="none",1500);
 }
 
-// GPS（強化版）
-navigator.geolocation.getCurrentPosition(async pos=>{
- const lat=pos.coords.latitude;
- const lon=pos.coords.longitude;
+// 住所取得（安定版）
+function getAddress(){
+ navigator.geolocation.getCurrentPosition(async pos=>{
+  const lat=pos.coords.latitude;
+  const lon=pos.coords.longitude;
 
- try{
   const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
   const data=await res.json();
 
-  let addr=data.display_name||"住所不明";
-  addr=addr.replace("日本、","");
+  document.getElementById("genba").innerText=data.display_name;
+ });
+}
 
-  document.getElementById("genba").innerText=addr;
+// カメラ
+function scan(){
+ document.getElementById("camera").click();
+}
 
- }catch{
-  document.getElementById("genba").innerText="住所取得失敗";
+// 定型文（10個）
+let templates = JSON.parse(localStorage.getItem("t")||"[]");
+
+function loadTemplates(){
+ const box=document.getElementById("templates");
+ box.innerHTML="";
+
+ for(let i=0;i<10;i++){
+  const val=templates[i]||"";
+
+  const btn=document.createElement("button");
+  btn.textContent=val||("定型"+(i+1));
+
+  btn.onclick=()=>{
+   document.getElementById("code").value=val;
+  };
+
+  btn.oncontextmenu=(e)=>{
+   e.preventDefault();
+   const newVal=prompt("編集",val||"");
+   if(newVal!==null){
+    templates[i]=newVal;
+    localStorage.setItem("t",JSON.stringify(templates));
+    loadTemplates();
+   }
+  };
+
+  box.appendChild(btn);
  }
+}
 
-},{
- enableHighAccuracy:true,
- timeout:10000,
- maximumAge:0
-});
+loadTemplates();
 </script>
 
 </body>
