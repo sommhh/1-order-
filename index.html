@@ -3,24 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文 完全版</title>
+<title>現場注文 最強版</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
 body{font-family:sans-serif;padding:10px;}
+input,button{font-size:14px;padding:6px;margin:3px;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 td,th{border:1px solid #000;padding:4px;text-align:center;}
+td[contenteditable]{background:#eef;}
 .qty{min-width:30px;display:inline-block;}
-.print-table{width:100%;border-collapse:collapse;}
-.print-table td,.print-table th{border:1px solid #000;padding:6px;}
+#suggest div{padding:5px;border-bottom:1px solid #ccc;cursor:pointer;}
+#suggest{background:#fff;border:1px solid #000;}
+.quick button{margin:2px;font-size:12px;}
 </style>
 </head>
 
 <body>
 
 <h3 id="genba">現場未取得</h3>
-<textarea id="comment" placeholder="備考"></textarea>
+<button onclick="getAddress()">📍住所</button>
 
-<input id="code" placeholder="貼る">
+<hr>
+
+<input id="search" placeholder="商品名検索">
+<div id="suggest"></div>
+
+<div class="quick" id="quick"></div>
+
+<hr>
+
+<input id="code" placeholder="貼る or OCR">
+<button onclick="ocrScan()">📷</button>
+<input type="file" id="ocr" accept="image/*" style="display:none">
 <button onclick="addItem()">追加</button>
 
 <table>
@@ -30,65 +46,130 @@ td,th{border:1px solid #000;padding:4px;text-align:center;}
 <tbody id="list"></tbody>
 </table>
 
-<hr>
-<button onclick="copyText()">コピー</button>
-<button onclick="sendLine()">LINE</button>
-<button onclick="sendMail()">メール</button>
-<button onclick="printData()">印刷</button>
-
 <script>
 const list=document.getElementById("list");
+const suggest=document.getElementById("suggest");
+const quick=document.getElementById("quick");
+
+let master={},count={};
+
+try{
+ master=JSON.parse(localStorage.getItem("master")||"{}");
+ count=JSON.parse(localStorage.getItem("count")||"{}");
+}catch{}
+
+// ===== 検索 =====
+search.oninput=function(){
+ let val=this.value.toLowerCase();
+ suggest.innerHTML="";
+ if(!val)return;
+
+ let arr=Object.entries(master)
+  .filter(([c,n])=>n.toLowerCase().includes(val))
+  .sort((a,b)=>(count[b[0]]||0)-(count[a[0]]||0));
+
+ arr.slice(0,10).forEach(([c,n])=>{
+  let d=document.createElement("div");
+  d.textContent=c+" "+n;
+  d.onclick=()=>addOrUpdate(c,n,1);
+  suggest.appendChild(d);
+ });
+}
+
+// ===== よく使う =====
+function renderQuick(){
+ quick.innerHTML="";
+ let arr=Object.entries(count)
+  .sort((a,b)=>b[1]-a[1])
+  .slice(0,8);
+
+ arr.forEach(([c])=>{
+  let b=document.createElement("button");
+  b.textContent=c;
+  b.onclick=()=>addOrUpdate(c,master[c]||"",1);
+  quick.appendChild(b);
+ });
+}
 
 // ===== 追加 =====
 function addItem(){
- let text=document.getElementById("code").value;
+ processText(code.value);
+ code.value="";
+}
+
+// ===== OCR =====
+function ocrScan(){
+ document.getElementById("ocr").click();
+}
+ocr.onchange=async e=>{
+ try{
+  let f=e.target.files[0];
+  let r=await Tesseract.recognize(f,'eng');
+  processText(r.data.text);
+ }catch{}
+};
+
+// ===== 処理 =====
+function processText(text){
  if(!text)return;
 
  text.split(/\n/).forEach(line=>{
   let t=line.trim().toUpperCase().replace(/[^A-Z0-9\/\-]/g,"");
   if(t.length<4)return;
 
-  addRow(t,"",1);
+  addOrUpdate(t,master[t]||"",1);
  });
-
- code.value="";
 }
 
-// ===== 行追加 =====
-function addRow(code,name,qty){
+// ===== 行 =====
+function addOrUpdate(code,name,qty){
  for(let tr of list.children){
   if(tr.children[1].innerText===code){
    let span=tr.querySelector(".qty");
-   span.innerText=parseInt(span.innerText)+1;
+   span.innerText=parseInt(span.innerText)+qty;
    return;
   }
  }
 
- let tr=document.createElement("tr");
+ const tr=document.createElement("tr");
 
  tr.innerHTML=`
  <td>${list.children.length+1}</td>
  <td>${code}</td>
- <td contenteditable>${name}</td>
+ <td contenteditable onblur="saveName(this)">${name}</td>
  <td>
-  <button onclick="chg(this,-1)">−</button>
-  <span class="qty" contenteditable onblur="fix(this)">1</span>
-  <button onclick="chg(this,1)">＋</button>
+  <button onclick="changeQty(this,-1)">−</button>
+  <span class="qty" contenteditable onblur="fixQty(this)">1</span>
+  <button onclick="changeQty(this,1)">＋</button>
  </td>
  <td><button onclick="this.closest('tr').remove();renum()">×</button></td>
  `;
 
- tr.addEventListener("click",e=>{
-  if(e.target.tagName==="BUTTON"||e.target.isContentEditable)return;
+ tr.onclick=e=>{
+  if(e.target.tagName==="BUTTON")return;
   let span=tr.querySelector(".qty");
   span.innerText=parseInt(span.innerText)+1;
- });
+ }
 
  list.appendChild(tr);
+
+ count[code]=(count[code]||0)+1;
+ localStorage.setItem("count",JSON.stringify(count));
+ renderQuick();
+}
+
+// ===== 商品名保存 =====
+function saveName(td){
+ let code=td.parentElement.children[1].innerText;
+ let name=td.innerText.trim();
+ if(!name)return;
+
+ master[code]=name;
+ localStorage.setItem("master",JSON.stringify(master));
 }
 
 // ===== 数量 =====
-function chg(btn,d){
+function changeQty(btn,d){
  let span=btn.parentElement.querySelector(".qty");
  let n=parseInt(span.innerText)||1;
  n+=d;
@@ -96,7 +177,7 @@ function chg(btn,d){
  span.innerText=n;
 }
 
-function fix(el){
+function fixQty(el){
  let n=parseInt(el.innerText);
  if(isNaN(n)||n<1)n=1;
  el.innerText=n;
@@ -104,67 +185,13 @@ function fix(el){
 
 // ===== 番号 =====
 function renum(){
- [...list.children].forEach((tr,i)=>{
+ document.querySelectorAll("#list tr").forEach((tr,i)=>{
   tr.children[0].innerText=i+1;
  });
 }
 
-// ===== テキスト =====
-function makeText(){
- let t="【現場】"+genba.innerText+"\n\n";
-
- [...list.children].forEach((tr,i)=>{
-  t+=(i+1)+". "+tr.children[1].innerText+" "+tr.children[2].innerText+" × "+tr.querySelector(".qty").innerText+"\n";
- });
-
- let c=comment.value;
- if(c)t+="\n備考："+c;
-
- return t;
-}
-
-// ===== 出力 =====
-function copyText(){navigator.clipboard.writeText(makeText());}
-
-function sendLine(){
- window.open("https://line.me/R/msg/text/?"+encodeURIComponent(makeText()));
-}
-
-function sendMail(){
- location.href="mailto:?subject=注文&body="+encodeURIComponent(makeText());
-}
-
-// ===== 印刷（ここが本命）=====
-function printData(){
- let w=window.open("");
-
- let html=`
- <h2>注文書</h2>
- <p>現場：${genba.innerText}</p>
-
- <table class="print-table">
- <tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th></tr>
- `;
-
- [...list.children].forEach((tr,i)=>{
-  html+=`
-  <tr>
-   <td>${i+1}</td>
-   <td>${tr.children[1].innerText}</td>
-   <td>${tr.children[2].innerText}</td>
-   <td>${tr.querySelector(".qty").innerText}</td>
-  </tr>`;
- });
-
- html+=`</table>`;
-
- if(comment.value){
-  html+=`<p>備考：${comment.value}</p>`;
- }
-
- w.document.write(html);
- w.print();
-}
+// ===== 初期 =====
+renderQuick();
 </script>
 
 </body>
