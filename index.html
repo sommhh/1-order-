@@ -3,17 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>現場注文 完成版</title>
+<title>現場注文 改良版</title>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
 body{font-family:sans-serif;padding:10px;}
-input,button,select{font-size:16px;padding:8px;margin:4px;}
+input,button,select{font-size:14px;padding:6px;margin:3px;}
 .row{display:flex;align-items:center;}
 label{width:60px;}
-table{width:100%;border-collapse:collapse;}
-td,th{border:1px solid #000;padding:5px;text-align:center;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+td,th{border:1px solid #000;padding:3px;text-align:center;}
+td[contenteditable]{background:#eef;}
+textarea{width:100%;height:50px;margin-top:5px;}
 </style>
 </head>
 
@@ -34,10 +36,13 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <button onclick="addPerson()">＋</button>
 </div>
 
+<!-- コメント -->
+<textarea id="comment" placeholder="例：〇日までにお願いします"></textarea>
+
 <hr>
 
-<input id="code" placeholder="ここに貼る or OCR">
-<button onclick="ocrScan()">📷OCR</button>
+<input id="code" placeholder="貼る or OCR">
+<button onclick="ocrScan()">📷</button>
 <input type="file" id="ocr" accept="image/*" capture="environment" style="display:none">
 
 <button onclick="addItem()">追加</button>
@@ -45,7 +50,7 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <h3>リスト</h3>
 <table>
 <thead>
-<tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th><th>削除</th></tr>
+<tr><th>No</th><th>品番</th><th>商品名</th><th>数</th><th>削除</th></tr>
 </thead>
 <tbody id="list"></tbody>
 </table>
@@ -57,51 +62,44 @@ td,th{border:1px solid #000;padding:5px;text-align:center;}
 <button onclick="sendMail()">メール</button>
 
 <script>
+const list = document.getElementById("list");
+
 // ===== データ =====
 let master=JSON.parse(localStorage.getItem("master")||"{}");
-let count=JSON.parse(localStorage.getItem("count")||"{}");
 let companies=JSON.parse(localStorage.getItem("companies")||"{}");
 
-// ===== 追加（ここが全処理）=====
+// ===== 追加 =====
 function addItem(){
  const input=document.getElementById("code").value;
-
  processText(input);
-
- document.getElementById("code").value="";
+ code.value="";
 }
 
-// ===== 文字処理（核心）=====
+// ===== 文字処理 =====
 function processText(text){
+ try{
+  const lines=text.split(/\n/);
 
- const lines=text.split(/\n/);
+  lines.forEach(line=>{
+   let t=line.trim();
+   t=t.replace(/[^A-Za-z0-9\/\-]/g,"");
 
- lines.forEach(line=>{
-  let t=line.trim();
+   if(!t || t.length<4) return;
 
-  // 英数字だけ
-  t=t.replace(/[^A-Za-z0-9\/\-]/g,"");
+   addOrUpdate(t,master[t]||"",1);
+  });
 
-  if(!t || t.length<4) return;
-
-  let name=master[t]||"";
-
-  // 使用回数
-  count[t]=(count[t]||0)+1;
-
-  addOrUpdate(t,name,1);
- });
-
- localStorage.setItem("count",JSON.stringify(count));
+ }catch{}
 }
 
-// ===== 重複まとめ =====
+// ===== 行追加 =====
 function addOrUpdate(code,name,qty){
  const rows=document.querySelectorAll("#list tr");
 
  for(let tr of rows){
   if(tr.children[1].innerText===code){
-   tr.children[3].innerText=Number(tr.children[3].innerText)+qty;
+   let q=Number(tr.children[3].innerText)||0;
+   tr.children[3].innerText=q+qty;
    return;
   }
  }
@@ -112,25 +110,34 @@ function addOrUpdate(code,name,qty){
  <td>${list.children.length+1}</td>
  <td>${code}</td>
  <td contenteditable onblur="saveName(this)">${name}</td>
- <td>${qty}</td>
+ <td contenteditable onblur="fixQty(this)">1</td>
  <td><button onclick="this.closest('tr').remove();renum()">×</button></td>
  `;
 
  list.appendChild(tr);
 }
 
-// 商品名保存
+// ===== 商品名保存 =====
 function saveName(td){
- const code=td.parentElement.children[1].innerText;
- const name=td.innerText;
+ try{
+  const code=td.parentElement.children[1].innerText;
+  const name=td.innerText.trim();
 
- if(name){
-  master[code]=name;
-  localStorage.setItem("master",JSON.stringify(master));
- }
+  if(name){
+   master[code]=name;
+   localStorage.setItem("master",JSON.stringify(master));
+  }
+ }catch{}
 }
 
-// 番号振り直し
+// ===== 数量補正 =====
+function fixQty(td){
+ let n=parseInt(td.innerText);
+ if(isNaN(n)||n<1)n=1;
+ td.innerText=n;
+}
+
+// ===== 番号 =====
 function renum(){
  document.querySelectorAll("#list tr").forEach((tr,i)=>{
   tr.children[0].innerText=i+1;
@@ -143,27 +150,37 @@ function ocrScan(){
 }
 
 document.getElementById("ocr").onchange=async e=>{
- const file=e.target.files[0];
- if(!file)return;
+ try{
+  const file=e.target.files[0];
+  if(!file)return;
 
- const {data:{text}}=await Tesseract.recognize(file,'eng');
-
- processText(text);
+  const {data:{text}}=await Tesseract.recognize(file,'eng');
+  processText(text);
+ }catch{
+  alert("OCR失敗");
+ }
 };
 
 // ===== 貼り付け =====
-document.getElementById("code").addEventListener("paste",function(e){
- const paste=(e.clipboardData||window.clipboardData).getData("text");
- processText(paste);
- e.preventDefault();
+code.addEventListener("paste",e=>{
+ try{
+  const paste=e.clipboardData.getData("text");
+  processText(paste);
+  e.preventDefault();
+ }catch{}
 });
 
-// ===== コピー =====
+// ===== テキスト =====
 function makeText(){
  let text="";
  text+="【現場】"+genba.innerText+"\n";
  text+="【会社】"+companySelect.value+"\n";
- text+="【担当】"+personSelect.value+"\n\n";
+ text+="【担当】"+personSelect.value+"\n";
+
+ let comment=document.getElementById("comment").value;
+ if(comment) text+="【備考】"+comment+"\n";
+
+ text+="\n";
 
  document.querySelectorAll("#list tr").forEach((tr,i)=>{
   text+=(i+1)+". "+tr.children[1].innerText+" "+tr.children[2].innerText+" × "+tr.children[3].innerText+"\n";
@@ -172,6 +189,7 @@ function makeText(){
  return text;
 }
 
+// ===== コピー =====
 function copyText(){
  navigator.clipboard.writeText(makeText());
 }
@@ -189,9 +207,13 @@ function sendMail(){
 // ===== 住所 =====
 function getAddress(){
  navigator.geolocation.getCurrentPosition(async pos=>{
-  const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
-  const data=await res.json();
-  genba.innerText=data.display_name;
+  try{
+   const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`);
+   const data=await res.json();
+   genba.innerText=data.display_name;
+  }catch{
+   genba.innerText="取得失敗";
+  }
  });
 }
 
@@ -215,9 +237,9 @@ function addCompany(){
 }
 
 function changeCompany(){
- let list=companies[companySelect.value]||[];
+ let listData=companies[companySelect.value]||[];
  personSelect.innerHTML="";
- list.forEach(p=>{
+ listData.forEach(p=>{
   let o=document.createElement("option");
   o.textContent=p;
   personSelect.appendChild(o);
@@ -225,9 +247,13 @@ function changeCompany(){
 }
 
 function addPerson(){
+ let c=companySelect.value;
+ if(!c){alert("会社選択して");return;}
+
  let n=prompt("担当者");
  if(!n)return;
- companies[companySelect.value].push(n);
+
+ companies[c].push(n);
  localStorage.setItem("companies",JSON.stringify(companies));
  changeCompany();
 }
