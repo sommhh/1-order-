@@ -1,213 +1,280 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>現場発注</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-<style>
-:root{--primary:#0d6efd;--bg:#f8f9fa;--border:#dee2e6;--muted:#6c757d}
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;background:var(--bg);color:#212529;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;font-size:16px;line-height:1.5}
-button,input,select,textarea{font:inherit;color:inherit}
-button{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;touch-action:manipulation}
-button:active{transform:scale(.97)}button.primary{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
-header{position:sticky;top:0;z-index:100;background:rgba(248,249,250,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:10px 12px}
-.header-top{display:flex;align-items:center;gap:8px}
-#genba{flex:1;margin:0;font-size:18px;font-weight:700;padding:8px 10px;border-radius:10px;outline:none;min-height:44px;display:flex;align-items:center}
-#genba:empty:before{content:"現場名をタップして入力";color:#adb5bd}
-#genba:focus{background:#fff;box-shadow:0 0 0 2px rgba(13,110,253,.2)}
-.status{font-size:12px;color:var(--muted);margin-top:4px;padding-left:4px;height:18px}
-main{padding-bottom:140px;max-width:720px;margin:0 auto}
-.card{background:#fff;margin:12px;border-radius:16px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
-.row{display:flex;gap:8px;align-items:center}
-.row select{flex:1;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:12px;background:#fff}
-.row.icon{width:44px;flex:0 0 44px;font-size:20px}
-#biko{width:100%;margin-top:10px;min-height:60px;padding:10px;border:1px solid var(--border);border-radius:12px;resize:vertical}
-.search-wrap{position:relative}
-#search{width:100%;height:48px;padding:0 14px 0 40px;border:1px solid var(--border);border-radius:12px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23adb5bd' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 12px center}
-.suggest{position:absolute;top:52px;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;display:none;z-index:50}
-.s-item{padding:12px;border-bottom:1px solid #f1f3f5;cursor:pointer}
-.s-item b{color:var(--primary);margin-right:6px;font-family:ui-monospace,monospace}
-.quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
-@media(min-width:480px){.quick-grid{grid-template-columns:repeat(3,1fr)}}
-.chip{min-height:44px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:8px 12px;border:1px solid #e9ecef;border-radius:12px;background:#fff;text-align:left;gap:2px}
-.chip.code{font-weight:700;font-size:14px;color:var(--primary);font-family:ui-monospace,monospace}
-.chip.name{font-size:12px;color:#495057;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
-.code-row{display:flex;gap:8px}
-#code{flex:1;height:48px;padding:0 12px;border:1px solid var(--border);border-radius:12px;text-transform:uppercase}
-#ocrBtn{width:48px;font-size:20px}
-.ocr-status{font-size:12px;color:var(--muted);margin-top:6px;min-height:18px;padding-left:4px}
-.table-card{padding:0;overflow:hidden}
-table{width:100%;border-collapse:separate;border-spacing:0}
-thead th{position:sticky;top:0;background:#f8f9fa;padding:12px 8px;font-size:13px;text-align:left;border-bottom:1px solid var(--border);z-index:1}
-tbody td{padding:10px 8px;border-bottom:1px solid #f1f3f5;font-size:15px;vertical-align:middle}
-td.no{width:36px;text-align:center;color:var(--muted)}
-td.code-cell{font-family:ui-monospace,monospace;font-weight:600;color:var(--primary);white-space:nowrap}
-td.name-cell{min-width:120px;max-width:180px;outline:none}
-.qty-cell{white-space:nowrap;display:flex;align-items:center;gap:6px}
-.qty-btn{width:36px;height:36px;padding:0;border-radius:10px;background:#f1f3f5;border-color:#e9ecef;font-size:20px;display:flex;align-items:center;justify-content:center}
-.qty{min-width:32px;text-align:center;display:inline-block;padding:4px 2px;outline:none;border-radius:6px}
-.qty:focus{background:#e7f1ff}
-.del{background:transparent;border:none;color:#dc3545;font-size:20px;width:44px}
-.footer{position:fixed;bottom:0;left:0;right:0;background:rgba(248,249,250,.9);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:10px 12px;z-index:90}
-.footer-inner{max-width:720px;margin:0 auto}
-.totals{display:flex;gap:20px;font-size:14px;margin-bottom:8px;padding:0 4px}
-.totals b{font-size:18px;margin-left:4px}
-.actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
-@media(min-width:560px){.actions{grid-template-columns:repeat(7,1fr)}}
-.actions button{font-size:13px;height:40px;border-radius:10px}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
-.modal[hidden]{display:none}
-.modal-content{background:#fff;width:100%;max-width:440px;border-radius:20px;padding:18px;max-height:80vh;display:flex;flex-direction:column}
-#saveList{overflow:auto;flex:1}
-.save-item{display:flex;gap:8px;margin-bottom:8px;align-items:center}
-.save-item>button:first-child{flex:1;text-align:left;padding:10px 12px;height:auto;min-height:52px}
-</style>
-</head>
-<body>
-<header>
-  <div class="header-top">
-    <h2 id="genba" contenteditable="true"></h2>
-    <button id="addrBtn">📍取得</button>
-  </div>
-  <div id="status" class="status"></div>
-</header>
-
-<main>
-  <div class="card">
-    <div class="row">
-      <select id="company"></select>
-      <button class="icon" onclick="addCompany()">＋</button>
-      <select id="person"></select>
-      <button class="icon" onclick="addPerson()">＋</button>
-    </div>
-    <textarea id="biko" placeholder="備考（納期・搬入時間など）"></textarea>
-  </div>
-
-  <div class="card">
-    <div class="search-wrap">
-      <input id="search" placeholder="商品名または品番で検索">
-      <div id="suggest" class="suggest"></div>
-    </div>
-    <div id="quick" class="quick-grid"></div>
-  </div>
-
-  <div class="card">
-    <div class="code-row">
-      <input id="code" placeholder="品番入力 → Enterで追加" autocomplete="off">
-      <button id="ocrBtn" onclick="ocrScan()">📷</button>
-      <input type="file" id="ocr" accept="image/*" capture="environment" hidden>
-      <button id="addBtn" class="primary" onclick="addItem()">追加</button>
-    </div>
-    <div id="ocrStatus" class="ocr-status"></div>
-  </div>
-
-  <div class="card table-card">
-    <table>
-      <thead><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th><th></th></tr></thead>
-      <tbody id="list"></tbody>
-    </table>
-    <div id="empty" class="muted" style="display:none;padding:20px;text-align:center;color:#6c757d">まだ商品がありません</div>
-  </div>
-</main>
-
-<div class="footer">
-  <div class="footer-inner">
-    <div class="totals"><span>点数<b id="totalItems">0</b></span><span>数量<b id="totalQty">0</b></span></div>
-    <div class="actions">
-      <button onclick="copyText()">コピー</button>
-      <button onclick="sendLine()">LINE</button>
-      <button onclick="sendMail()">メール</button>
-      <button onclick="saveData()">保存</button>
-      <button onclick="showLoadModal()">読込</button>
-      <button onclick="printData()">印刷</button>
-      <button onclick="exportData()">出力</button>
-    </div>
-  </div>
-</div>
-
-<div id="loadModal" class="modal" hidden>
-  <div class="modal-content">
-    <h3>保存データ読込</h3>
-    <div id="saveList"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;border-top:1px solid #f1f3f5;padding-top:12px">
-      <button onclick="importData()">インポート</button>
-      <button class="primary" onclick="document.getElementById('loadModal').hidden=true">閉じる</button>
-    </div>
-  </div>
-</div>
-
 <script>
-const $=s=>document.querySelector(s);
-let master={},count={},companies={},autosaveTimer;
+'use strict';
 
-function safeParse(k,d){try{return JSON.parse(localStorage.getItem(k)||d)}catch{return JSON.parse(d)}}
-try{master=safeParse('master','{}');count=safeParse('count','{}');companies=safeParse('companies','{}')}catch{}
+/* =========================
+   基本
+========================= */
+var $=s=>document.querySelector(s);
+var $$=s=>[...document.querySelectorAll(s)];
 
-function setStatus(t){$('#status').textContent=t;setTimeout(()=>$('#status').textContent='',3000)}
-function toHalf(s){return s.replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/ー/g,'-')}
-
-// 住所取得
-async function getAddress(){
-  if(!navigator.geolocation){setStatus('位置情報不可');return}
-  setStatus('取得中...');
-  navigator.geolocation.getCurrentPosition(async p=>{
-    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}`);const d=await r.json();$('#genba').textContent=d.display_name||'取得失敗';setStatus('住所セット')}catch{setStatus('取得失敗')}
-  },()=>setStatus('位置情報拒否'));
+function toast(m){
+  let t=$('#toast');
+  t.textContent=m;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),1500);
 }
 
-// 会社
-function loadCompanies(){$('#company').innerHTML='';Object.keys(companies).forEach(c=>{let o=document.createElement('option');o.textContent=c;$('#company').appendChild(o)});changeCompany()}
-function addCompany(){const n=prompt('会社名');if(!n)return;companies[n]=companies[n]||[];localStorage.setItem('companies',JSON.stringify(companies));loadCompanies();$('#company').value=n}
-function changeCompany(){const c=$('#company').value;$('#person').innerHTML='';(companies[c]||[]).forEach(p=>{let o=document.createElement('option');o.textContent=p;$('#person').appendChild(o)})}
-function addPerson(){const c=$('#company').value;if(!c)return alert('会社を選択');const n=prompt('担当者');if(!n)return;companies[c].push(n);localStorage.setItem('companies',JSON.stringify(companies));changeCompany();$('#person').value=n}
+function uid(){
+  return Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+}
 
-// 検索
-let searchTimer;
-$('#search').oninput=e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>doSearch(e.target.value),200)};
-function doSearch(v){const s=$('#suggest');s.innerHTML='';if(!v){s.style.display='none';return};const q=v.toLowerCase();const arr=Object.entries(master).filter(([c,n])=>c.toLowerCase().includes(q)||n.toLowerCase().includes(q)).sort((a,b)=>(count[b[0]]||0)-(count[a[0]]||0)).slice(0,10);if(!arr.length){s.style.display='none';return};arr.forEach(([c,n])=>{const d=document.createElement('div');d.className='s-item';d.innerHTML=`<b>${c}</b>${n}`;d.onclick=()=>{addOrUpdate(c,n,1);s.style.display='none';$('#search').value=''};s.appendChild(d)});s.style.display='block'}
-document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))$('#suggest').style.display='none'});
+/* =========================
+   DB
+========================= */
+var db,sites=[],cur=null,photos=[],sel=new Set(),floor='1階';
 
-// クイック
-function renderQuick(){$('#quick').innerHTML='';Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,12).forEach(([c])=>{const b=document.createElement('button');b.className='chip';b.innerHTML=`<span class="code">${c}</span><span class="name">${master[c]||''}</span>`;b.onclick=()=>addOrUpdate(c,master[c]||'',1);$('#quick').appendChild(b)})}
+function openDB(){
+  return new Promise(res=>{
+    let r=indexedDB.open('genba_v20',2);
 
-// OCR
-function ocrScan(){$('#ocr').click()}
-$('#ocr').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#ocrStatus').textContent='読取中...';try{const {data:{text}}=await Tesseract.recognize(f,'jpn+eng',{logger:m=>{if(m.status==='recognizing text')$('#ocrStatus').textContent=`読取中 ${Math.round(m.progress*100)}%`}});processText(text);$('#ocrStatus').textContent='完了'}catch{$('#ocrStatus').textContent='失敗'};e.target.value=''};
-function processText(t){if(!t)return;t.split(/\n/).forEach(line=>{let s=toHalf(line.trim().toUpperCase());s=s.replace(/[^A-Z0-9\/_\-]/g,'');if(s.length>=4)addOrUpdate(s,master[s]||'',1)})}
+    r.onupgradeneeded=e=>{
+      let d=e.target.result;
 
-// 追加・更新
-function addItem(){const v=toHalf($('#code').value.trim().toUpperCase());if(!v)return;addOrUpdate(v,master[v]||'',1);$('#code').value=''}
-function addOrUpdate(code,name,qty){const list=$('#list');let found=null;list.querySelectorAll('tr').forEach(tr=>{if(tr.dataset.code===code)found=tr});if(found){changeQty(found,qty);count[code]=(count[code]||0)+qty}else{const tr=document.createElement('tr');tr.dataset.code=code;tr.innerHTML=`<td class="no"></td><td class="code-cell">${code}</td><td class="name-cell" contenteditable="true">${name||'未入力'}</td><td class="qty-cell"><button class="qty-btn" onclick="changeQty(this.closest('tr'),-1)">−</button><span class="qty" contenteditable="true" onblur="fixQty(this)">${qty}</span><button class="qty-btn" onclick="changeQty(this.closest('tr'),1)">＋</button></td><td><button class="del" onclick="deleteRow(this)">🗑</button></td>`;tr.querySelector('.name-cell').addEventListener('blur',e=>saveName(e.target));tr.addEventListener('click',e=>{if(e.target.closest('button')||e.target.isContentEditable)return;changeQty(tr,1)});list.appendChild(tr);count[code]=(count[code]||0)+qty}localStorage.setItem('count',JSON.stringify(count));renderQuick();renum();updateTotals();saveAuto()}
-function saveName(td){const code=td.parentElement.dataset.code;const n=td.textContent.trim();if(n){master[code]=n;localStorage.setItem('master',JSON.stringify(master))}}
-function changeQty(tr,d){const q=tr.querySelector('.qty');let n=parseInt(q.textContent)||0;n+=d;if(n<1)n=1;q.textContent=n;updateTotals();saveAuto()}
-function fixQty(el){let n=parseInt(el.textContent);if(isNaN(n)||n<1)n=1;el.textContent=n;updateTotals()}
-function deleteRow(btn){if(!confirm('削除しますか？'))return;btn.closest('tr').remove();renum();updateTotals();saveAuto()}
-function renum(){$('#list').querySelectorAll('tr').forEach((tr,i)=>tr.querySelector('.no').textContent=i+1);$('#empty').style.display=$('#list').children.length?'none':'block'}
-function updateTotals(){let items=0,qty=0;$('#list').querySelectorAll('tr').forEach(tr=>{items++;qty+=parseInt(tr.querySelector('.qty').textContent)||0});$('#totalItems').textContent=items;$('#totalQty').textContent=qty}
+      if(!d.objectStoreNames.contains('sites'))
+        d.createObjectStore('sites',{keyPath:'id'});
 
-// 保存
-function getCurrentOrder(){return{genba:$('#genba').textContent.trim(),company:$('#company').value,person:$('#person').value,biko:$('#biko').value,items:[...$('#list').querySelectorAll('tr')].map(tr=>({code:tr.dataset.code,name:tr.querySelector('.name-cell').textContent,qty:parseInt(tr.querySelector('.qty').textContent)}))}}
-function saveAuto(){localStorage.setItem('autosave',JSON.stringify(getCurrentOrder()))}
-function saveData(){const d=getCurrentOrder();if(!d.genba)return alert('現場名入力');if(!confirm('保存しますか？'))return;const name=prompt('保存名',d.genba)||d.genba;const data={...d,ts:Date.now()};localStorage.setItem('save_'+name,JSON.stringify(data));let saves=safeParse('saves','[]');if(!saves.includes(name))saves.push(name);localStorage.setItem('saves',JSON.stringify(saves));setStatus('保存完了')}
-function showLoadModal(){const m=$('#loadModal');const l=$('#saveList');l.innerHTML='';const saves=safeParse('saves','[]').map(n=>{try{return{n,ts:JSON.parse(localStorage.getItem('save_'+n)).ts}}catch{return{n,ts:0}}}).sort((a,b)=>b.ts-a.ts);if(!saves.length)l.innerHTML='<div style="text-align:center;color:#6c757d;padding:20px">データなし</div>';saves.forEach(({n,ts})=>{const div=document.createElement('div');div.className='save-item';div.innerHTML=`<button onclick="loadData('${n.replace(/'/g,"\\'")}')">${n}<br><small>${ts?new Date(ts).toLocaleString('ja-JP'):''}</small></button><button class="del" onclick="deleteSave('${n.replace(/'/g,"\\'")}')">削除</button>`;l.appendChild(div)});m.hidden=false}
-function loadData(name){const d=JSON.parse(localStorage.getItem('save_'+name));if(!d)return;$('#list').innerHTML='';$('#genba').textContent=d.genba;$('#biko').value=d.biko||'';if(d.company){$('#company').value=d.company;changeCompany()}if(d.person)$('#person').value=d.person;d.items.forEach(it=>addOrUpdate(it.code,it.name,it.qty));$('#loadModal').hidden=true;setStatus('読込完了')}
-function deleteSave(n){if(!confirm(n+'を削除？'))return;localStorage.removeItem('save_'+n);localStorage.setItem('saves',JSON.stringify(safeParse('saves','[]').filter(x=>x!==n)));showLoadModal()}
+      if(!d.objectStoreNames.contains('photos')){
+        let p=d.createObjectStore('photos',{keyPath:'id'});
+        p.createIndex('siteId','siteId');
+      }
+    };
 
-// 出力
-function makeText(){const d=getCurrentOrder();const date=new Date().toLocaleDateString('ja-JP');let t=`【現場】${d.genba}\n【会社】${d.company} ${d.person}\n【日付】${date}\n\n■発注\n`;d.items.forEach((it,i)=>t+=`${i+1}. ${it.code} ${it.name} ×${it.qty}\n`);if(d.biko)t+=`\n【備考】\n${d.biko}\n`;t+=`\n合計 ${d.items.length}点 / ${d.items.reduce((a,b)=>a+b.qty,0)}個`;return t}
-function copyText(){navigator.clipboard.writeText(makeText()).then(()=>setStatus('コピーしました'))}
-function sendLine(){window.open('https://line.me/R/msg/text/?'+encodeURIComponent(makeText()))}
-function sendMail(){location.href='mailto:?subject='+encodeURIComponent('発注 '+$('#genba').textContent)+'&body='+encodeURIComponent(makeText())}
-function printData(){const d=getCurrentOrder();const w=window.open('');w.document.write(`<h1>発注書</h1><p>${d.genba} / ${d.company} ${d.person}</p><table border=1 cellpadding=6><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th></tr>${d.items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td></tr>`).join('')}</table>`);w.print()}
-function exportData(){const data={master,count,companies,saves:{}};safeParse('saves','[]').forEach(n=>data.saves[n]=JSON.parse(localStorage.getItem('save_'+n)));const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='genba_backup.json';a.click()}
-function importData(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];const r=new FileReader();r.onload=()=>{const d=JSON.parse(r.result);if(d.master)localStorage.setItem('master',JSON.stringify(d.master));if(d.count)localStorage.setItem('count',JSON.stringify(d.count));if(d.companies)localStorage.setItem('companies',JSON.stringify(d.companies));if(d.saves){Object.entries(d.saves).forEach(([k,v])=>localStorage.setItem('save_'+k,JSON.stringify(v)));localStorage.setItem('saves',JSON.stringify(Object.keys(d.saves)))}location.reload()};r.readAsText(f)};i.click()}
+    r.onsuccess=()=>res(r.result);
+  });
+}
 
-// 初期化
-$('#addrBtn').onclick=getAddress;
-$('#code').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addItem()}});
-document.addEventListener('DOMContentLoaded',()=>{loadCompanies();renderQuick();renum();updateTotals();autosaveTimer=setInterval(saveAuto,20000);const auto=safeParse('autosave','null');if(auto&&auto.items&&confirm('前回のデータを復元しますか？')){loadData('_autosave_temp');localStorage.setItem('save__autosave_temp',JSON.stringify(auto));loadData('_autosave_temp')}});
+function tx(n,m='readonly'){
+  return db.transaction(n,m).objectStore(n);
+}
+
+function put(n,o){
+  return new Promise(res=>{
+    let q=tx(n,'readwrite').put(o);
+    q.onsuccess=()=>res(true);
+    q.onerror=()=>res(false);
+  });
+}
+
+function del(n,id){
+  return new Promise(r=>{
+    tx(n,'readwrite').delete(id).onsuccess=r;
+  });
+}
+
+function bySite(id){
+  return new Promise(r=>{
+    tx('photos').index('siteId').getAll(id).onsuccess=e=>r(e.target.result||[]);
+  });
+}
+
+/* =========================
+   AI分類（安全）
+========================= */
+function aiDetectFloor(c){
+  let d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  let bright=0;
+
+  for(let i=0;i<d.length;i+=40){
+    bright+=(d[i]+d[i+1]+d[i+2])/3;
+  }
+
+  let avg=bright/(d.length/4);
+
+  if(avg>140) return '外部';
+  if(avg<80) return '1階';
+  return '2階';
+}
+
+function aiDetectStatus(c){
+  let d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+  let edge=0;
+
+  for(let i=0;i<d.length;i+=80){
+    if(d[i]+d[i+1]+d[i+2]>600) edge++;
+  }
+
+  if(edge<2000) return '施工前';
+  if(edge<5000) return '施工中';
+  return '施工後';
+}
+
+/* =========================
+   Blob + サムネ
+========================= */
+function canvasToBlob(c){
+  return new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+}
+
+function makeThumb(c){
+  let t=document.createElement('canvas');
+  let size=300;
+  t.width=size;
+  t.height=size;
+
+  let ctx=t.getContext('2d');
+
+  let w=c.width,h=c.height;
+  let s=Math.min(size/w,size/h);
+
+  let nw=w*s,nh=h*s;
+
+  ctx.fillRect(0,0,size,size);
+  ctx.drawImage(c,(size-nw)/2,(size-nh)/2,nw,nh);
+
+  return t.toDataURL('image/jpeg',0.6);
+}
+
+/* =========================
+   撮影
+========================= */
+async function takePhoto(){
+
+  let v=$('#vid');
+  if(!v.videoWidth) return;
+
+  let c=document.createElement('canvas');
+  c.width=v.videoWidth;
+  c.height=v.videoHeight;
+
+  let ctx=c.getContext('2d');
+  ctx.drawImage(v,0,0);
+
+  // AI
+  let aiF=aiDetectFloor(c);
+  let aiS=aiDetectStatus(c);
+
+  let finalFloor = floor || aiF;
+  let finalStatus = $('#stat')?.value || aiS;
+
+  let blob=await canvasToBlob(c);
+  let thumb=makeThumb(c);
+
+  let p={
+    id:uid(),
+    siteId:cur.id,
+    floor:finalFloor,
+    status:finalStatus,
+    ts:Date.now(),
+    blob:blob,
+    thumb:thumb
+  };
+
+  if(await put('photos',p)){
+    photos.unshift(p);
+    renderPhotos();
+    toast('撮影OK');
+  }
+}
+
+/* =========================
+   表示（高速）
+========================= */
+function renderPhotos(){
+
+  let g=$('#grid');
+  g.innerHTML='';
+
+  let list=photos.filter(p=>p.floor===floor);
+
+  list.forEach(p=>{
+    let d=document.createElement('div');
+    d.className='pic';
+
+    let img=document.createElement('img');
+
+    if(p.thumb) img.src=p.thumb;
+    else img.src=p.data;
+
+    d.onclick=()=>{
+      if(p.blob){
+        let url=URL.createObjectURL(p.blob);
+        window.open(url);
+        setTimeout(()=>URL.revokeObjectURL(url),2000);
+      }else{
+        window.open(p.data);
+      }
+    };
+
+    d.appendChild(img);
+    g.appendChild(d);
+  });
+}
+
+/* =========================
+   ZIP
+========================= */
+async function exportZip(list){
+
+  if(!window.JSZip){
+    await new Promise(r=>{
+      let s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      s.onload=r;
+      document.head.appendChild(s);
+    });
+  }
+
+  let zip=new JSZip();
+
+  for(let i=0;i<list.length;i++){
+    let p=list[i];
+
+    if(p.blob){
+      zip.file(i+'.jpg',p.blob);
+    }else{
+      let b64=p.data.split(',')[1];
+      zip.file(i+'.jpg',b64,{base64:true});
+    }
+  }
+
+  let blob=await zip.generateAsync({type:'blob'});
+
+  let url=URL.createObjectURL(blob);
+  let a=document.createElement('a');
+  a.href=url;
+  a.download='photos.zip';
+  a.click();
+
+  setTimeout(()=>URL.revokeObjectURL(url),2000);
+}
+
+/* =========================
+   現場削除（完全）
+========================= */
+async function deleteSite(){
+
+  if(!confirm('現場ごと削除しますか？')) return;
+
+  let id=cur.id;
+
+  let ps=await bySite(id);
+
+  for(let p of ps){
+    await del('photos',p.id);
+  }
+
+  await del('sites',id);
+
+  sites=sites.filter(s=>s.id!==id);
+  photos=[];
+
+  cur=sites[0]||null;
+
+  if(cur){
+    loadSite();
+  }else{
+    location.reload();
+  }
+
+  toast('完全削除');
+}
+
+/* =========================
+   初期化
+========================= */
+async function init(){
+  db=await openDB();
+}
+
+init();
 </script>
-</body>
-</html>
