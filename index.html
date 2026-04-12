@@ -1,196 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<!-- Playables SDK -->
-<script>// Playables SDK v1.0.0
-// Game lifecycle bridge: rAF-based game-ready detection + event communication
-(function() {
-  'use strict';
-
-  // Idempotency: skip if already initialized (e.g., server-side injection
-  // followed by client-side inject-javascript via the Bloks webview component).
-  if (window.playablesSDK) return;
-
-  var HANDLER_NAME = 'playablesGameEventHandler';
-  var ANDROID_BRIDGE_NAME = '_MetaPlayablesBridge';
-  var RAF_FRAME_THRESHOLD = 3;
-
-  var gameReadySent = false;
-  var firstInteractionSent = false;
-  var errorSent = false;
-  var frameCount = 0;
-  var originalRAF = window.requestAnimationFrame;
-
-  // --- Transport Layer ---
-
-  function hasIOSBridge() {
-    return !!(window.webkit &&
-              window.webkit.messageHandlers &&
-              window.webkit.messageHandlers[HANDLER_NAME]);
-  }
-
-  function hasAndroidBridge() {
-    return !!(window[ANDROID_BRIDGE_NAME] &&
-              typeof window[ANDROID_BRIDGE_NAME].postEvent === 'function');
-  }
-
-  function isInIframe() {
-    return !!(window.parent && window.parent !== window);
-  }
-
-  function sendEvent(eventName, payload) {
-    var message = {
-      type: eventName,
-      payload: payload || {},
-      timestamp: Date.now()
-    };
-
-    if (hasIOSBridge()) {
-      try {
-        window.webkit.messageHandlers[HANDLER_NAME].postMessage(message);
-      } catch (e) { /* ignore */ }
-      return;
-    }
-
-    if (hasAndroidBridge()) {
-    try {
-      var p = payload || {};
-      p.__secureToken = window.__fbAndroidBridgeAuthToken || '';
-      window[ANDROID_BRIDGE_NAME].postEvent(
-        eventName,
-        JSON.stringify(p)
-      );
-    } catch (e) { /* ignore */ }
-    return;
-  }
-
-    if (isInIframe()) {
-      try {
-        window.parent.postMessage(message, '*');
-      } catch (e) { /* ignore */ }
-      return;
-    }
-  }
-
-  // --- rAF Game-Ready Detection ---
-
-  function onFrame() {
-    if (gameReadySent) return;
-
-    frameCount++;
-    if (frameCount >= RAF_FRAME_THRESHOLD) {
-      gameReadySent = true;
-      sendEvent('game_ready', {
-        frame_count: frameCount,
-        detected_at: Date.now()
-      });
-      return;
-    }
-
-    originalRAF.call(window, onFrame);
-  }
-
-  if (originalRAF) {
-    window.requestAnimationFrame = function(callback) {
-      if (!gameReadySent) {
-        return originalRAF.call(window, function(timestamp) {
-          frameCount++;
-          if (frameCount >= RAF_FRAME_THRESHOLD && !gameReadySent) {
-            gameReadySent = true;
-            sendEvent('game_ready', {
-              frame_count: frameCount,
-              detected_at: Date.now()
-            });
-          }
-          callback(timestamp);
-        });
-      }
-      return originalRAF.call(window, callback);
-    };
-  }
-
-  // --- First User Interaction Detection ---
-
-  function setupFirstInteractionDetection() {
-    var events = ['touchstart', 'mousedown', 'keydown'];
-
-    function onFirstInteraction() {
-      if (firstInteractionSent) return;
-      firstInteractionSent = true;
-      sendEvent('user_interaction_start', null);
-
-      for (var i = 0; i < events.length; i++) {
-        document.removeEventListener(events[i], onFirstInteraction, true);
-      }
-    }
-
-    for (var i = 0; i < events.length; i++) {
-      document.addEventListener(events[i], onFirstInteraction, true);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupFirstInteractionDetection);
-  } else {
-    setupFirstInteractionDetection();
-  }
-
-  // --- Auto Error Capture ---
-
-  window.addEventListener('error', function(event) {
-    if (errorSent) return;
-    errorSent = true;
-    sendEvent('error', {
-      message: event.message || 'Unknown error',
-      source: event.filename || '',
-      lineno: event.lineno || 0,
-      colno: event.colno || 0,
-      auto_captured: true
-    });
-  });
-
-  window.addEventListener('unhandledrejection', function(event) {
-    if (errorSent) return;
-    errorSent = true;
-    var reason = event.reason;
-    sendEvent('error', {
-      message: (reason instanceof Error) ? reason.message : String(reason),
-      type: 'unhandled_promise_rejection',
-      auto_captured: true
-    });
-  });
-
-  // --- Public API ---
-
-  window.playablesSDK = {
-    complete: function(score) {
-      sendEvent('game_ended', {
-        score: score,
-        completed: true
-      });
-    },
-
-    error: function(message) {
-      if (errorSent) return;
-      errorSent = true;
-      sendEvent('error', {
-        message: message || 'Unknown error',
-        auto_captured: false
-      });
-    },
-
-    sendEvent: function(eventName, payload) {
-      if (!eventName || typeof eventName !== 'string') return;
-      sendEvent(eventName, payload);
-    }
-  };
-
-  // Kick off rAF detection in case no game code calls rAF immediately
-  if (originalRAF) {
-    originalRAF.call(window, onFrame);
-  }
-})();</script>
-<script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>現場発注</title>
@@ -200,324 +10,204 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0;background:var(--bg);color:#212529;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",Meiryo,sans-serif;font-size:16px;line-height:1.5}
 button,input,select,textarea{font:inherit;color:inherit}
-button{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;touch-action:manipulation;transition:.15s}
+button{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;touch-action:manipulation}
 button:active{transform:scale(.97)}button.primary{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
-header{position:sticky;top:0;z-index:100;background:rgba(248,249,250,.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:10px 12px}
+header{position:sticky;top:0;z-index:100;background:rgba(248,249,250,.85);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:10px 12px}
 .header-top{display:flex;align-items:center;gap:8px}
 #genba{flex:1;margin:0;font-size:18px;font-weight:700;padding:8px 10px;border-radius:10px;outline:none;min-height:44px;display:flex;align-items:center}
 #genba:empty:before{content:"現場名をタップして入力";color:#adb5bd}
 #genba:focus{background:#fff;box-shadow:0 0 0 2px rgba(13,110,253,.2)}
-#addrBtn{font-size:14px;white-space:nowrap}
 .status{font-size:12px;color:var(--muted);margin-top:4px;padding-left:4px;height:18px}
 main{padding-bottom:140px;max-width:720px;margin:0 auto}
 .card{background:#fff;margin:12px;border-radius:16px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
 .row{display:flex;gap:8px;align-items:center}
 .row select{flex:1;min-height:44px;padding:0 12px;border:1px solid var(--border);border-radius:12px;background:#fff}
-.row .icon{width:44px;flex:0 0 44px;font-size:20px}
+.row.icon{width:44px;flex:0 0 44px;font-size:20px}
 #biko{width:100%;margin-top:10px;min-height:60px;padding:10px;border:1px solid var(--border);border-radius:12px;resize:vertical}
 .search-wrap{position:relative}
 #search{width:100%;height:48px;padding:0 14px 0 40px;border:1px solid var(--border);border-radius:12px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23adb5bd' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.3-4.3'/%3E%3C/svg%3E") no-repeat 12px center}
 .suggest{position:absolute;top:52px;left:0;right:0;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;display:none;z-index:50}
 .s-item{padding:12px;border-bottom:1px solid #f1f3f5;cursor:pointer}
-.s-item:last-child{border:none}
 .s-item b{color:var(--primary);margin-right:6px;font-family:ui-monospace,monospace}
 .quick-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px}
 @media(min-width:480px){.quick-grid{grid-template-columns:repeat(3,1fr)}}
 .chip{min-height:44px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:8px 12px;border:1px solid #e9ecef;border-radius:12px;background:#fff;text-align:left;gap:2px}
-.chip:active{background:#f1f3f5}
-.chip .code{font-weight:700;font-size:14px;color:var(--primary);font-family:ui-monospace,monospace}
-.chip .name{font-size:12px;color:#495057;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+.chip.code{font-weight:700;font-size:14px;color:var(--primary);font-family:ui-monospace,monospace}
+.chip.name{font-size:12px;color:#495057;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
 .code-row{display:flex;gap:8px}
 #code{flex:1;height:48px;padding:0 12px;border:1px solid var(--border);border-radius:12px;text-transform:uppercase}
 #ocrBtn{width:48px;font-size:20px}
-#addBtn{white-space:nowrap}
 .ocr-status{font-size:12px;color:var(--muted);margin-top:6px;min-height:18px;padding-left:4px}
 .table-card{padding:0;overflow:hidden}
 table{width:100%;border-collapse:separate;border-spacing:0}
-thead th{position:sticky;top:0;background:#f8f9fa;padding:12px 8px;font-size:13px;text-align:left;border-bottom:1px solid var(--border);z-index:1;white-space:nowrap}
+thead th{position:sticky;top:0;background:#f8f9fa;padding:12px 8px;font-size:13px;text-align:left;border-bottom:1px solid var(--border);z-index:1}
 tbody td{padding:10px 8px;border-bottom:1px solid #f1f3f5;font-size:15px;vertical-align:middle}
-tr:active{background:#f8f9fa}
-td.no{width:36px;text-align:center;color:var(--muted);font-variant-numeric:tabular-nums}
-td.code-cell{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;color:var(--primary);white-space:nowrap}
+td.no{width:36px;text-align:center;color:var(--muted)}
+td.code-cell{font-family:ui-monospace,monospace;font-weight:600;color:var(--primary);white-space:nowrap}
 td.name-cell{min-width:120px;max-width:180px;outline:none}
-td.name-cell:focus{background:#fff3cd}
 .qty-cell{white-space:nowrap;display:flex;align-items:center;gap:6px}
-.qty-btn{width:36px;height:36px;min-height:36px;min-width:36px;padding:0;border-radius:10px;background:#f1f3f5;border-color:#e9ecef;font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
-.qty{min-width:32px;text-align:center;display:inline-block;padding:4px 2px;font-variant-numeric:tabular-nums;outline:none;border-radius:6px}
+.qty-btn{width:36px;height:36px;padding:0;border-radius:10px;background:#f1f3f5;border-color:#e9ecef;font-size:20px;display:flex;align-items:center;justify-content:center}
+.qty{min-width:32px;text-align:center;display:inline-block;padding:4px 2px;outline:none;border-radius:6px}
 .qty:focus{background:#e7f1ff}
 .del{background:transparent;border:none;color:#dc3545;font-size:20px;width:44px}
-.footer{position:fixed;bottom:0;left:0;right:0;background:rgba(248,249,250,.9);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:10px 12px env(safe-area-inset-bottom);z-index:90}
+.footer{position:fixed;bottom:0;left:0;right:0;background:rgba(248,249,250,.9);backdrop-filter:blur(12px);border-top:1px solid var(--border);padding:10px 12px;z-index:90}
 .footer-inner{max-width:720px;margin:0 auto}
 .totals{display:flex;gap:20px;font-size:14px;margin-bottom:8px;padding:0 4px}
-.totals b{font-size:18px;font-variant-numeric:tabular-nums;margin-left:4px}
+.totals b{font-size:18px;margin-left:4px}
 .actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 @media(min-width:560px){.actions{grid-template-columns:repeat(7,1fr)}}
-.actions button{font-size:13px;padding:0 8px;background:#fff;height:40px;min-height:40px;border-radius:10px}
-.muted{color:var(--muted);text-align:center;padding:12px;font-size:14px}
+.actions button{font-size:13px;height:40px;border-radius:10px}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
 .modal[hidden]{display:none}
 .modal-content{background:#fff;width:100%;max-width:440px;border-radius:20px;padding:18px;max-height:80vh;display:flex;flex-direction:column}
-.modal-content h3{margin:0 0 12px;font-size:18px}
-#saveList{overflow:auto;flex:1;margin:0 -6px;padding:0 6px}
+#saveList{overflow:auto;flex:1}
 .save-item{display:flex;gap:8px;margin-bottom:8px;align-items:center}
-.save-item>button:first-child{flex:1;text-align:left;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:10px 12px;height:auto;min-height:52px}
-.save-item small{color:var(--muted);font-size:12px;margin-top:2px}
-.save-item .del{flex:0 0 auto;background:#fff1f1;border:1px solid #ffd6d6;color:#dc3545}
-.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;padding-top:12px;border-top:1px solid #f1f3f5}
+.save-item>button:first-child{flex:1;text-align:left;padding:10px 12px;height:auto;min-height:52px}
 </style>
 </head>
 <body>
 <header>
   <div class="header-top">
-    <h2 id="genba" contenteditable="true" spellcheck="false"></h2>
-    <button id="addrBtn" type="button">📍取得</button>
+    <h2 id="genba" contenteditable="true"></h2>
+    <button id="addrBtn">📍取得</button>
   </div>
-  <div id="status" class="status">準備完了</div>
+  <div id="status" class="status"></div>
 </header>
 
 <main>
-  <section class="card">
+  <div class="card">
     <div class="row">
-      <select id="company" aria-label="会社"></select>
-      <button class="icon" type="button" onclick="addCompany()" aria-label="会社追加">＋</button>
-      <select id="person" aria-label="担当"></select>
-      <button class="icon" type="button" onclick="addPerson()" aria-label="担当追加">＋</button>
+      <select id="company"></select>
+      <button class="icon" onclick="addCompany()">＋</button>
+      <select id="person"></select>
+      <button class="icon" onclick="addPerson()">＋</button>
     </div>
-    <textarea id="biko" placeholder="備考（配送希望時間など）"></textarea>
-  </section>
+    <textarea id="biko" placeholder="備考（納期・搬入時間など）"></textarea>
+  </div>
 
-  <section class="card">
+  <div class="card">
     <div class="search-wrap">
-      <input id="search" type="search" placeholder="品番または商品名で検索" autocomplete="off" enterkeyhint="search">
+      <input id="search" placeholder="商品名または品番で検索">
       <div id="suggest" class="suggest"></div>
     </div>
     <div id="quick" class="quick-grid"></div>
-  </section>
+  </div>
 
-  <section class="card">
+  <div class="card">
     <div class="code-row">
-      <input id="code" type="text" placeholder="品番入力" inputmode="latin" autocapitalize="characters">
-      <button id="ocrBtn" type="button" onclick="ocrScan()" title="カメラで読取">📷</button>
-      <button id="addBtn" class="primary" type="button" onclick="addItem()">➕追加</button>
+      <input id="code" placeholder="品番入力 → Enterで追加" autocomplete="off">
+      <button id="ocrBtn" onclick="ocrScan()">📷</button>
+      <input type="file" id="ocr" accept="image/*" capture="environment" hidden>
+      <button id="addBtn" class="primary" onclick="addItem()">追加</button>
     </div>
     <div id="ocrStatus" class="ocr-status"></div>
-    <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
-  </section>
+  </div>
 
-  <section class="card table-card">
+  <div class="card table-card">
     <table>
-      <thead><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th><th>削除</th></tr></thead>
+      <thead><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th><th></th></tr></thead>
       <tbody id="list"></tbody>
     </table>
-  </section>
+    <div id="empty" class="muted" style="display:none;padding:20px;text-align:center;color:#6c757d">まだ商品がありません</div>
+  </div>
 </main>
 
-<footer class="footer">
+<div class="footer">
   <div class="footer-inner">
-    <div class="totals">
-      <span>合計点数:<b id="totalItems">0</b></span>
-      <span>合計数量:<b id="totalQty">0</b></span>
-    </div>
+    <div class="totals"><span>点数<b id="totalItems">0</b></span><span>数量<b id="totalQty">0</b></span></div>
     <div class="actions">
-      <button type="button" onclick="copyText()">コピー</button>
-      <button type="button" onclick="sendLine()">LINE</button>
-      <button type="button" onclick="sendMail()">メール</button>
-      <button type="button" onclick="saveData()">保存</button>
-      <button type="button" onclick="showLoadModal()">読込</button>
-      <button type="button" onclick="printData()">印刷</button>
-      <button type="button" onclick="exportData()">エクスポート</button>
+      <button onclick="copyText()">コピー</button>
+      <button onclick="sendLine()">LINE</button>
+      <button onclick="sendMail()">メール</button>
+      <button onclick="saveData()">保存</button>
+      <button onclick="showLoadModal()">読込</button>
+      <button onclick="printData()">印刷</button>
+      <button onclick="exportData()">出力</button>
     </div>
   </div>
-</footer>
+</div>
 
 <div id="loadModal" class="modal" hidden>
   <div class="modal-content">
-    <h3>保存データ</h3>
+    <h3>保存データ読込</h3>
     <div id="saveList"></div>
-    <div class="modal-actions">
-      <button type="button" onclick="importData()">インポート</button>
-      <button type="button" class="primary" onclick="document.getElementById('loadModal').hidden=true">閉じる</button>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;border-top:1px solid #f1f3f5;padding-top:12px">
+      <button onclick="importData()">インポート</button>
+      <button class="primary" onclick="document.getElementById('loadModal').hidden=true">閉じる</button>
     </div>
   </div>
 </div>
 
 <script>
-const $ = s => document.querySelector(s);
-const statusEl = $('#status');
-let master={}, count={}, companies={};
-let worker=null;
-let autosaveTimer=null;
+const $=s=>document.querySelector(s);
+let master={},count={},companies={},autosaveTimer;
 
-function setStatus(t){ statusEl.textContent=t; clearTimeout(setStatus._t); setStatus._t=setTimeout(()=>{if(statusEl.textContent===t) statusEl.textContent='準備完了'},3000) }
-function safeParse(k,d){ try{return JSON.parse(localStorage.getItem(k)||d)}catch{return JSON.parse(d)} }
+function safeParse(k,d){try{return JSON.parse(localStorage.getItem(k)||d)}catch{return JSON.parse(d)}}
+try{master=safeParse('master','{}');count=safeParse('count','{}');companies=safeParse('companies','{}')}catch{}
 
-try{ master = safeParse('master','{}') }catch{}
-try{ count = safeParse('count','{}') }catch{}
-try{ companies = safeParse('companies','{}') }catch{}
+function setStatus(t){$('#status').textContent=t;setTimeout(()=>$('#status').textContent='',3000)}
+function toHalf(s){return s.replace(/[Ａ-Ｚａ-ｚ０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/ー/g,'-')}
 
-if(Object.keys(master).length===0){
-  master = {"VVF2.0-2C":"VVFケーブル 2.0mm 2芯","IV1.6-W":"IV 1.6 白","PF16":"PF管 16mm","CD-30":"カールプラグ 30mm","PB-25":"ボードアンカー 25","W3/8-1000":"吊りボルト W3/8 1m","LGS-65":"LGS 65形","PB-12.5":"石膏ボード 12.5mm","VIS-4X40":"ビス 4×40","VE16":"VE管 16","PFD-28":"PFD 28","EM-CE14":"エコケーブル 14sq"};
-  localStorage.setItem('master',JSON.stringify(master));
+// 住所取得
+async function getAddress(){
+  if(!navigator.geolocation){setStatus('位置情報不可');return}
+  setStatus('取得中...');
+  navigator.geolocation.getCurrentPosition(async p=>{
+    try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${p.coords.latitude}&lon=${p.coords.longitude}`);const d=await r.json();$('#genba').textContent=d.display_name||'取得失敗';setStatus('住所セット')}catch{setStatus('取得失敗')}
+  },()=>setStatus('位置情報拒否'));
 }
 
-function getAddress(){
-  if(!navigator.geolocation){ setStatus('位置情報非対応'); return }
-  setStatus('位置情報取得中…');
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    try{
-      const lat=pos.coords.latitude, lon=pos.coords.longitude;
-      const key=`addr_${lat.toFixed(4)}_${lon.toFixed(4)}`;
-      const cached = localStorage.getItem(key);
-      if(cached){ $('#genba').textContent=cached; setStatus('住所取得(キャッシュ)'); return }
-      setStatus('住所変換中…');
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&accept-language=ja`,{headers:{'Accept':'application/json'}});
-      const data = await res.json();
-      const addr = data.address||{};
-      const short = [addr.suburb||addr.neighbourhood||'', addr.town||addr.city||addr.village||'', addr.road||''].filter(Boolean).join(' ') || data.display_name.split(',').slice(0,2).join(' ');
-      $('#genba').textContent = short || `${lat.toFixed(5)},${lon.toFixed(5)}`;
-      localStorage.setItem(key, $('#genba').textContent);
-      setStatus('住所取得完了');
-    }catch(e){ setStatus('住所取得失敗') }
-  },()=>setStatus('位置情報が拒否されました'),{enableHighAccuracy:true,timeout:10000});
-}
+// 会社
+function loadCompanies(){$('#company').innerHTML='';Object.keys(companies).forEach(c=>{let o=document.createElement('option');o.textContent=c;$('#company').appendChild(o)});changeCompany()}
+function addCompany(){const n=prompt('会社名');if(!n)return;companies[n]=companies[n]||[];localStorage.setItem('companies',JSON.stringify(companies));loadCompanies();$('#company').value=n}
+function changeCompany(){const c=$('#company').value;$('#person').innerHTML='';(companies[c]||[]).forEach(p=>{let o=document.createElement('option');o.textContent=p;$('#person').appendChild(o)})}
+function addPerson(){const c=$('#company').value;if(!c)return alert('会社を選択');const n=prompt('担当者');if(!n)return;companies[c].push(n);localStorage.setItem('companies',JSON.stringify(companies));changeCompany();$('#person').value=n}
 
-function saveCompanies(){ localStorage.setItem('companies', JSON.stringify(companies)) }
-function loadCompanies(){
-  const sel=$('#company'); sel.innerHTML='';
-  if(Object.keys(companies).length===0){ companies={'(株)サンプル電材':['田中','佐藤'],'(株)工事センター':['鈴木']}; saveCompanies() }
-  Object.keys(companies).forEach(c=>{ const o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o) });
-  changeCompany();
-}
-function addCompany(){ const name=prompt('会社名を入力'); if(!name) return; if(!companies[name]) companies[name]=[]; saveCompanies(); loadCompanies(); $('#company').value=name; changeCompany() }
-function changeCompany(){ const c=$('#company').value; const pSel=$('#person'); pSel.innerHTML=''; (companies[c]||[]).forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; pSel.appendChild(o) }) }
-function addPerson(){ const c=$('#company').value; if(!c){alert('先に会社を選択');return} const name=prompt('担当者名を入力'); if(!name) return; if(!companies[c].includes(name)) companies[c].push(name); saveCompanies(); changeCompany(); $('#person').value=name }
+// 検索
+let searchTimer;
+$('#search').oninput=e=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>doSearch(e.target.value),200)};
+function doSearch(v){const s=$('#suggest');s.innerHTML='';if(!v){s.style.display='none';return};const q=v.toLowerCase();const arr=Object.entries(master).filter(([c,n])=>c.toLowerCase().includes(q)||n.toLowerCase().includes(q)).sort((a,b)=>(count[b[0]]||0)-(count[a[0]]||0)).slice(0,10);if(!arr.length){s.style.display='none';return};arr.forEach(([c,n])=>{const d=document.createElement('div');d.className='s-item';d.innerHTML=`<b>${c}</b>${n}`;d.onclick=()=>{addOrUpdate(c,n,1);s.style.display='none';$('#search').value=''};s.appendChild(d)});s.style.display='block'}
+document.addEventListener('click',e=>{if(!e.target.closest('.search-wrap'))$('#suggest').style.display='none'});
 
-function debounce(fn,ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms) } }
+// クイック
+function renderQuick(){$('#quick').innerHTML='';Object.entries(count).sort((a,b)=>b[1]-a[1]).slice(0,12).forEach(([c])=>{const b=document.createElement('button');b.className='chip';b.innerHTML=`<span class="code">${c}</span><span class="name">${master[c]||''}</span>`;b.onclick=()=>addOrUpdate(c,master[c]||'',1);$('#quick').appendChild(b)})}
 
-const searchInput=$('#search');
-searchInput.addEventListener('input', debounce(e=>{
-  const q=e.target.value.trim(); const sug=$('#suggest');
-  if(!q){ sug.style.display='none'; return }
-  const qn=processText(q).toLowerCase(); const ql=q.toLowerCase();
-  const results=Object.keys(master).map(code=>({code,name:master[code],c:count[code]||0}))
-    .filter(it=>it.code.toLowerCase().includes(qn)||it.name.toLowerCase().includes(ql))
-    .sort((a,b)=>b.c-a.c||a.code.localeCompare(b.code)).slice(0,10);
-  if(results.length===0){ sug.style.display='none'; return }
-  sug.innerHTML=results.map(r=>`<div class="s-item" data-code="${r.code}"><b>${r.code}</b> ${r.name}</div>`).join('');
-  sug.style.display='block';
-  [...sug.querySelectorAll('.s-item')].forEach(el=>el.onclick=()=>{ addOrUpdate(el.dataset.code, master[el.dataset.code],1); sug.style.display='none'; searchInput.value='' })
-},200));
-document.addEventListener('click',e=>{ if(!e.target.closest('.search-wrap')) $('#suggest').style.display='none' });
+// OCR
+function ocrScan(){$('#ocr').click()}
+$('#ocr').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#ocrStatus').textContent='読取中...';try{const {data:{text}}=await Tesseract.recognize(f,'jpn+eng',{logger:m=>{if(m.status==='recognizing text')$('#ocrStatus').textContent=`読取中 ${Math.round(m.progress*100)}%`}});processText(text);$('#ocrStatus').textContent='完了'}catch{$('#ocrStatus').textContent='失敗'};e.target.value=''};
+function processText(t){if(!t)return;t.split(/\n/).forEach(line=>{let s=toHalf(line.trim().toUpperCase());s=s.replace(/[^A-Z0-9\/_\-]/g,'');if(s.length>=4)addOrUpdate(s,master[s]||'',1)})}
 
-function renderQuick(){
-  const quick=$('#quick'); quick.innerHTML='';
-  const items=Object.keys(master).map(code=>({code,name:master[code],c:count[code]||0})).sort((a,b)=>b.c-a.c).slice(0,12);
-  if(items.length===0){ quick.innerHTML='<div class="muted">よく使う商品がここに表示されます</div>'; return }
-  items.forEach(it=>{
-    const b=document.createElement('button'); b.className='chip'; b.type='button';
-    b.innerHTML=`<span class="code">${it.code}</span><span class="name">${it.name}</span>`;
-    b.onclick=()=>addOrUpdate(it.code,it.name,1);
-    quick.appendChild(b);
-  });
-}
+// 追加・更新
+function addItem(){const v=toHalf($('#code').value.trim().toUpperCase());if(!v)return;addOrUpdate(v,master[v]||'',1);$('#code').value=''}
+function addOrUpdate(code,name,qty){const list=$('#list');let found=null;list.querySelectorAll('tr').forEach(tr=>{if(tr.dataset.code===code)found=tr});if(found){changeQty(found,qty);count[code]=(count[code]||0)+qty}else{const tr=document.createElement('tr');tr.dataset.code=code;tr.innerHTML=`<td class="no"></td><td class="code-cell">${code}</td><td class="name-cell" contenteditable="true">${name||'未入力'}</td><td class="qty-cell"><button class="qty-btn" onclick="changeQty(this.closest('tr'),-1)">−</button><span class="qty" contenteditable="true" onblur="fixQty(this)">${qty}</span><button class="qty-btn" onclick="changeQty(this.closest('tr'),1)">＋</button></td><td><button class="del" onclick="deleteRow(this)">🗑</button></td>`;tr.querySelector('.name-cell').addEventListener('blur',e=>saveName(e.target));tr.addEventListener('click',e=>{if(e.target.closest('button')||e.target.isContentEditable)return;changeQty(tr,1)});list.appendChild(tr);count[code]=(count[code]||0)+qty}localStorage.setItem('count',JSON.stringify(count));renderQuick();renum();updateTotals();saveAuto()}
+function saveName(td){const code=td.parentElement.dataset.code;const n=td.textContent.trim();if(n){master[code]=n;localStorage.setItem('master',JSON.stringify(master))}}
+function changeQty(tr,d){const q=tr.querySelector('.qty');let n=parseInt(q.textContent)||0;n+=d;if(n<1)n=1;q.textContent=n;updateTotals();saveAuto()}
+function fixQty(el){let n=parseInt(el.textContent);if(isNaN(n)||n<1)n=1;el.textContent=n;updateTotals()}
+function deleteRow(btn){if(!confirm('削除しますか？'))return;btn.closest('tr').remove();renum();updateTotals();saveAuto()}
+function renum(){$('#list').querySelectorAll('tr').forEach((tr,i)=>tr.querySelector('.no').textContent=i+1);$('#empty').style.display=$('#list').children.length?'none':'block'}
+function updateTotals(){let items=0,qty=0;$('#list').querySelectorAll('tr').forEach(tr=>{items++;qty+=parseInt(tr.querySelector('.qty').textContent)||0});$('#totalItems').textContent=items;$('#totalQty').textContent=qty}
 
-async function ocrScan(){
-  const fileInput=$('#fileInput');
-  fileInput.onchange=async e=>{
-    const file=e.target.files[0]; if(!file) return;
-    $('#ocrStatus').textContent='OCR準備中…'; setStatus('画像解析中');
-    try{
-      if(!worker){
-        worker = await Tesseract.createWorker('jpn+eng',1,{logger:m=>{ if(m.status==='recognizing text'){ $('#ocrStatus').textContent=`認識中 ${Math.round(m.progress*100)}%` } }});
-      }
-      const {data:{text}} = await worker.recognize(file);
-      const code=processText(text);
-      $('#ocrStatus').textContent = code ? `検出: ${code}` : '品番を検出できませんでした';
-      if(code){ $('#code').value=code; addItem() }
-    }catch(err){ $('#ocrStatus').textContent='読取失敗'; setStatus('OCR失敗') }
-    fileInput.value='';
-  };
-  fileInput.click();
-}
+// 保存
+function getCurrentOrder(){return{genba:$('#genba').textContent.trim(),company:$('#company').value,person:$('#person').value,biko:$('#biko').value,items:[...$('#list').querySelectorAll('tr')].map(tr=>({code:tr.dataset.code,name:tr.querySelector('.name-cell').textContent,qty:parseInt(tr.querySelector('.qty').textContent)}))}}
+function saveAuto(){localStorage.setItem('autosave',JSON.stringify(getCurrentOrder()))}
+function saveData(){const d=getCurrentOrder();if(!d.genba)return alert('現場名入力');if(!confirm('保存しますか？'))return;const name=prompt('保存名',d.genba)||d.genba;const data={...d,ts:Date.now()};localStorage.setItem('save_'+name,JSON.stringify(data));let saves=safeParse('saves','[]');if(!saves.includes(name))saves.push(name);localStorage.setItem('saves',JSON.stringify(saves));setStatus('保存完了')}
+function showLoadModal(){const m=$('#loadModal');const l=$('#saveList');l.innerHTML='';const saves=safeParse('saves','[]').map(n=>{try{return{n,ts:JSON.parse(localStorage.getItem('save_'+n)).ts}}catch{return{n,ts:0}}}).sort((a,b)=>b.ts-a.ts);if(!saves.length)l.innerHTML='<div style="text-align:center;color:#6c757d;padding:20px">データなし</div>';saves.forEach(({n,ts})=>{const div=document.createElement('div');div.className='save-item';div.innerHTML=`<button onclick="loadData('${n.replace(/'/g,"\\'")}')">${n}<br><small>${ts?new Date(ts).toLocaleString('ja-JP'):''}</small></button><button class="del" onclick="deleteSave('${n.replace(/'/g,"\\'")}')">削除</button>`;l.appendChild(div)});m.hidden=false}
+function loadData(name){const d=JSON.parse(localStorage.getItem('save_'+name));if(!d)return;$('#list').innerHTML='';$('#genba').textContent=d.genba;$('#biko').value=d.biko||'';if(d.company){$('#company').value=d.company;changeCompany()}if(d.person)$('#person').value=d.person;d.items.forEach(it=>addOrUpdate(it.code,it.name,it.qty));$('#loadModal').hidden=true;setStatus('読込完了')}
+function deleteSave(n){if(!confirm(n+'を削除？'))return;localStorage.removeItem('save_'+n);localStorage.setItem('saves',JSON.stringify(safeParse('saves','[]').filter(x=>x!==n)));showLoadModal()}
 
-function processText(t){
-  if(!t) return '';
-  let s = t.replace(/[Ａ-Ｚａ-ｚ０-９]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
-  s = s.replace(/[－—―─‐−]/g,'-').replace(/[＿]/g,'_').replace(/\s+/g,'');
-  const m = s.match(/[A-Z0-9][A-Z0-9\-_./]{1,}[0-9]/gi);
-  if(m && m.length){ return m.sort((a,b)=>b.length-a.length)[0].toUpperCase() }
-  return s.replace(/[^A-Z0-9\-_./]/gi,'').toUpperCase().slice(0,30);
-}
+// 出力
+function makeText(){const d=getCurrentOrder();const date=new Date().toLocaleDateString('ja-JP');let t=`【現場】${d.genba}\n【会社】${d.company} ${d.person}\n【日付】${date}\n\n■発注\n`;d.items.forEach((it,i)=>t+=`${i+1}. ${it.code} ${it.name} ×${it.qty}\n`);if(d.biko)t+=`\n【備考】\n${d.biko}\n`;t+=`\n合計 ${d.items.length}点 / ${d.items.reduce((a,b)=>a+b.qty,0)}個`;return t}
+function copyText(){navigator.clipboard.writeText(makeText()).then(()=>setStatus('コピーしました'))}
+function sendLine(){window.open('https://line.me/R/msg/text/?'+encodeURIComponent(makeText()))}
+function sendMail(){location.href='mailto:?subject='+encodeURIComponent('発注 '+$('#genba').textContent)+'&body='+encodeURIComponent(makeText())}
+function printData(){const d=getCurrentOrder();const w=window.open('');w.document.write(`<h1>発注書</h1><p>${d.genba} / ${d.company} ${d.person}</p><table border=1 cellpadding=6><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th></tr>${d.items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td></tr>`).join('')}</table>`);w.print()}
+function exportData(){const data={master,count,companies,saves:{}};safeParse('saves','[]').forEach(n=>data.saves[n]=JSON.parse(localStorage.getItem('save_'+n)));const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='genba_backup.json';a.click()}
+function importData(){const i=document.createElement('input');i.type='file';i.accept='.json';i.onchange=e=>{const f=e.target.files[0];const r=new FileReader();r.onload=()=>{const d=JSON.parse(r.result);if(d.master)localStorage.setItem('master',JSON.stringify(d.master));if(d.count)localStorage.setItem('count',JSON.stringify(d.count));if(d.companies)localStorage.setItem('companies',JSON.stringify(d.companies));if(d.saves){Object.entries(d.saves).forEach(([k,v])=>localStorage.setItem('save_'+k,JSON.stringify(v)));localStorage.setItem('saves',JSON.stringify(Object.keys(d.saves)))}location.reload()};r.readAsText(f)};i.click()}
 
-function addOrUpdate(code,name,qty=1){
-  code=processText(code); if(!code) return;
-  if(!name) name=master[code]||'';
-  const tbody=$('#list');
-  let tr=[...tbody.querySelectorAll('tr')].find(r=>r.dataset.code===code);
-  if(tr){ changeQty(tr, qty) }
-  else{
-    tr=document.createElement('tr'); tr.dataset.code=code;
-    tr.innerHTML=`<td class="no"></td><td class="code-cell">${code}</td><td class="name-cell" contenteditable="true">${name}</td><td class="qty-cell"><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),-1)">−</button><span class="qty" contenteditable="true" onblur="fixQty(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">1</span><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),1)">＋</button></td><td><button class="del" type="button" onclick="deleteRow(this)">🗑</button></td>`;
-    tr.addEventListener('click',e=>{ if(e.target.closest('button')||e.target.isContentEditable) return; changeQty(tr,1) });
-    tr.querySelector('.name-cell').addEventListener('blur',e=>saveName(code,e.target.textContent.trim()));
-    tbody.appendChild(tr);
-    saveName(code,name);
-  }
-  count[code]=(count[code]||0)+qty; localStorage.setItem('count',JSON.stringify(count));
-  renum(); updateTotals(); saveAuto(); renderQuick();
-}
-
-function saveName(code,name){ if(name){ master[code]=name; localStorage.setItem('master',JSON.stringify(master)) } }
-function changeQty(tr,delta){ const qEl=tr.querySelector('.qty'); let q=parseInt(qEl.textContent)||0; q=Math.max(1,q+delta); qEl.textContent=q; updateTotals(); saveAuto() }
-function fixQty(el){ let v=parseInt(el.textContent.replace(/[^0-9]/g,''))||1; el.textContent=v; updateTotals(); saveAuto() }
-function renum(){ document.querySelectorAll('#list tr').forEach((tr,i)=>tr.querySelector('.no').textContent=i+1) }
-function addItem(){ const inp=$('#code'); let code=inp.value.trim(); if(!code){ inp.focus(); setStatus('品番を入力'); return } code=processText(code); const name=master[code]||''; addOrUpdate(code,name,1); inp.value=''; $('#suggest').style.display='none'; inp.focus() }
-function deleteRow(btn){ if(!confirm('この行を削除しますか？')) return; btn.closest('tr').remove(); renum(); updateTotals(); saveAuto() }
-
-function getCurrentOrder(){ return{ genba:$('#genba').textContent.trim(), company:$('#company').value, person:$('#person').value, biko:$('#biko').value, items:[...document.querySelectorAll('#list tr')].map(tr=>({code:tr.dataset.code,name:tr.querySelector('.name-cell').textContent.trim(),qty:parseInt(tr.querySelector('.qty').textContent)||1})), ts:Date.now() } }
-function saveAuto(){ try{ localStorage.setItem('autosave',JSON.stringify(getCurrentOrder())) }catch{} }
-function updateTotals(){ const rows=[...document.querySelectorAll('#list tr')]; $('#totalItems').textContent=rows.length; $('#totalQty').textContent=rows.reduce((s,tr)=>s+(parseInt(tr.querySelector('.qty').textContent)||0),0) }
-
-function saveData(){ const def=$('#genba').textContent.trim()||'現場'; const name=prompt('現場名で保存',def); if(!name) return; const data=getCurrentOrder(); data.genba=name; try{ localStorage.setItem('save_'+name,JSON.stringify(data)); let saves=safeParse('saves','[]'); if(!saves.includes(name)) saves.push(name); localStorage.setItem('saves',JSON.stringify(saves)); setStatus(`保存しました: ${name}`) }catch{ alert('保存に失敗しました') } }
-function loadData(name){ try{ const data=JSON.parse(localStorage.getItem('save_'+name)||'{}'); if(!data.items) return; $('#genba').textContent=data.genba||name; if(data.company && companies[data.company]){ $('#company').value=data.company; changeCompany() } if(data.person) $('#person').value=data.person; $('#biko').value=data.biko||''; $('#list').innerHTML=''; data.items.forEach(it=>{ const tr=document.createElement('tr'); tr.dataset.code=it.code; tr.innerHTML=`<td class="no"></td><td class="code-cell">${it.code}</td><td class="name-cell" contenteditable="true">${it.name}</td><td class="qty-cell"><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),-1)">−</button><span class="qty" contenteditable="true" onblur="fixQty(this)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">${it.qty}</span><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),1)">＋</button></td><td><button class="del" type="button" onclick="deleteRow(this)">🗑</button></td>`; tr.addEventListener('click',e=>{ if(e.target.closest('button')||e.target.isContentEditable) return; changeQty(tr,1) }); tr.querySelector('.name-cell').addEventListener('blur',e=>saveName(it.code,e.target.textContent.trim())); $('#list').appendChild(tr); if(!master[it.code]){master[it.code]=it.name} }); localStorage.setItem('master',JSON.stringify(master)); renum(); updateTotals(); saveAuto(); renderQuick(); setStatus(`読込完了: ${name}`); $('#loadModal').hidden=true }catch{ alert('読込失敗') } }
-function showLoadModal(){ const modal=$('#loadModal'); const list=$('#saveList'); list.innerHTML=''; const saves=safeParse('saves','[]'); const sorted=saves.map(n=>{ try{const d=JSON.parse(localStorage.getItem('save_'+n)||'{}'); return {n,ts:d.ts||0}}catch{return{n,ts:0}} }).sort((a,b)=>b.ts-a.ts); if(sorted.length===0){ list.innerHTML='<div class="muted">保存データがありません</div>' } else { sorted.forEach(({n,ts})=>{ const div=document.createElement('div'); div.className='save-item'; const safe=n.replace(/'/g,"\\'"); div.innerHTML=`<button type="button" onclick="loadData('${safe}')">${n}<small>${ts?new Date(ts).toLocaleString('ja-JP'):''}</small></button><button class="del" type="button" onclick="deleteSave('${safe}')">削除</button>`; list.appendChild(div) }) } modal.hidden=false }
-function deleteSave(name){ if(!confirm(`${name} を削除しますか？`)) return; localStorage.removeItem('save_'+name); let saves=safeParse('saves','[]'); saves=saves.filter(s=>s!==name); localStorage.setItem('saves',JSON.stringify(saves)); showLoadModal() }
-
-function makeText(){ const d=getCurrentOrder(); const date=new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short'}); let txt=`【現場】${d.genba||'未設定'}\n【会社】${d.company||''} ${d.person||''}\n【日付】${date}\n`; txt+=`\n■発注内容\n`; d.items.forEach((it,i)=>{ txt+=`${i+1}. ${it.code}　${it.name}　×${it.qty}\n` }); if(d.biko) txt+=`\n【備考】\n${d.biko}\n`; txt+=`\n合計 ${d.items.length}点 / ${d.items.reduce((a,b)=>a+b.qty,0)}個`; return txt }
-function copyText(){ navigator.clipboard.writeText(makeText()).then(()=>setStatus('コピーしました')).catch(()=>alert('コピーできませんでした')) }
-function sendLine(){ const text=encodeURIComponent(makeText()); window.open(`https://line.me/R/msg/text/?${text}`,'_blank') }
-function sendMail(){ const subject=encodeURIComponent(`発注依頼 ${$('#genba').textContent.trim()}`); const body=encodeURIComponent(makeText()); location.href=`mailto:?subject=${subject}&body=${body}` }
-function printData(){ const d=getCurrentOrder(); const w=window.open('','_print'); w.document.write(`<!doctype html><html lang="ja"><head><script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script><meta charset="utf-8"><title>発注書</title><style>body{font-family:-apple-system,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;padding:24px;color:#111}h1{font-size:22px;margin:0 0 8px} .meta{color:#555;margin-bottom:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#f5f5f5} .biko{margin-top:16px;white-space:pre-wrap}</style></head><body><h1>発注書</h1><div class="meta">現場: ${d.genba} / ${d.company} ${d.person} / ${new Date().toLocaleString('ja-JP')}</div><table><thead><tr><th>No</th><th>品番</th><th>商品名</th><th>数量</th></tr></thead><tbody>${d.items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.code}</td><td>${it.name}</td><td>${it.qty}</td></tr>`).join('')}</tbody></table>${d.biko?`<div class="biko"><strong>備考</strong><br>${d.biko.replace(/</g,'&lt;')}</div>`:''}<script>window.onload=()=>window.print()<\/script></body></html>`); w.document.close() }
-
-function exportData(){ const data={master,count,companies,saves:{},exportedAt:new Date().toISOString()}; const saves=safeParse('saves','[]'); saves.forEach(n=>{ const v=localStorage.getItem('save_'+n); if(v) data.saves[n]=JSON.parse(v) }); const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`genba_backup_${new Date().toISOString().slice(0,10)}.json`; a.click(); setStatus('エクスポート完了') }
-function importData(){ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const data=JSON.parse(r.result); if(data.master) localStorage.setItem('master',JSON.stringify(data.master)); if(data.count) localStorage.setItem('count',JSON.stringify(data.count)); if(data.companies) localStorage.setItem('companies',JSON.stringify(data.companies)); if(data.saves){ Object.entries(data.saves).forEach(([k,v])=>localStorage.setItem('save_'+k,JSON.stringify(v))); localStorage.setItem('saves',JSON.stringify(Object.keys(data.saves))) } alert('インポート完了。再読み込みします'); location.reload() }catch{ alert('無効なファイルです') } }; r.readAsText(f) }; inp.click() }
-
+// 初期化
 $('#addrBtn').onclick=getAddress;
-$('#code').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addItem() } });
-$('#genba').addEventListener('blur',saveAuto);
-$('#biko').addEventListener('input',debounce(saveAuto,500));
-$('#company').addEventListener('change',()=>{changeCompany(); saveAuto()});
-$('#person').addEventListener('change',saveAuto);
-
-function init(){
-  loadCompanies();
-  renderQuick();
-  try{
-    const auto=safeParse('autosave','null');
-    if(auto && auto.items && auto.items.length && confirm('前回の未保存データがあります。復元しますか？')){
-      $('#genba').textContent=auto.genba||'';
-      $('#biko').value=auto.biko||'';
-      if(auto.company && companies[auto.company]){ $('#company').value=auto.company; changeCompany() }
-      if(auto.person) $('#person').value=auto.person;
-      auto.items.forEach(it=>addOrUpdate(it.code,it.name,it.qty));
-      $('#list').innerHTML=''; // rebuild without double count
-      auto.items.forEach(it=>{ const tr=document.createElement('tr'); tr.dataset.code=it.code; tr.innerHTML=`<td class="no"></td><td class="code-cell">${it.code}</td><td class="name-cell" contenteditable="true">${it.name}</td><td class="qty-cell"><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),-1)">−</button><span class="qty" contenteditable="true" onblur="fixQty(this)">${it.qty}</span><button class="qty-btn" type="button" onclick="changeQty(this.closest('tr'),1)">＋</button></td><td><button class="del" type="button" onclick="deleteRow(this)">🗑</button></td>`; tr.addEventListener('click',e=>{if(e.target.closest('button')||e.target.isContentEditable)return;changeQty(tr,1)}); $('#list').appendChild(tr)}); renum(); updateTotals()
-    }
-  }catch{}
-  autosaveTimer=setInterval(saveAuto,20000);
-  updateTotals();
-}
-document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
+$('#code').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addItem()}});
+document.addEventListener('DOMContentLoaded',()=>{loadCompanies();renderQuick();renum();updateTotals();autosaveTimer=setInterval(saveAuto,20000);const auto=safeParse('autosave','null');if(auto&&auto.items&&confirm('前回のデータを復元しますか？')){loadData('_autosave_temp');localStorage.setItem('save__autosave_temp',JSON.stringify(auto));loadData('_autosave_temp')}});
 </script>
 </body>
 </html>
